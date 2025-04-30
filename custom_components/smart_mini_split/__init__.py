@@ -9,14 +9,16 @@ from homeassistant.const import (
     CONF_ENTITY_ID,
     ATTR_ENTITY_ID,
     CONF_NAME,
-    TEMP_FAHRENHEIT,
-    SERVICE_SET_TEMPERATURE,
 )
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.components.climate.const import DOMAIN as CLIMATE_DOMAIN
-from homeassistant.components.climate.const import ATTR_TEMPERATURE
+from homeassistant.components.climate.const import (
+    DOMAIN as CLIMATE_DOMAIN,
+    ATTR_TEMPERATURE,
+    UnitOfTemperature,
+    SERVICE_SET_TEMPERATURE,
+)
 from homeassistant.components.logbook import log_entry
 import homeassistant.helpers.entity_registry as er
 
@@ -141,6 +143,7 @@ class SmartMiniSplitController:
         self.reset_threshold = config[CONF_RESET_THRESHOLD]
         self.cooldown_minutes = config[CONF_COOLDOWN_MINUTES]
         self.log_level = config[CONF_LOG_LEVEL]
+        self.temperature_unit = UnitOfTemperature.FAHRENHEIT  # Default to Fahrenheit
         
         self.last_adjustment_time = None
         self.override_detected = False
@@ -156,7 +159,7 @@ class SmartMiniSplitController:
             current_temp = climate_state.attributes.get(ATTR_TEMPERATURE)
             if current_temp is not None and self.valid_range[0] <= current_temp <= self.valid_range[1]:
                 self.real_setpoint = current_temp
-                self.log_message(f"Initial real setpoint set to {self.real_setpoint}°F", "info")
+                self.log_message(f"Initial real setpoint set to {self.real_setpoint}°{self.temperature_unit}", "info")
 
         # Set up the timer to check temperatures every minute
         interval = timedelta(minutes=1)
@@ -203,7 +206,7 @@ class SmartMiniSplitController:
             if self.real_setpoint != current_setpoint:
                 self.real_setpoint = current_setpoint
                 self.override_detected = True
-                self.log_message(f"Manual override detected. New setpoint: {self.real_setpoint}°F", "info")
+                self.log_message(f"Manual override detected. New setpoint: {self.real_setpoint}°{self.temperature_unit}", "info")
                 return  # Skip this check to honor the manual change
         
         # If we don't have a real setpoint yet, we can't make adjustments
@@ -215,8 +218,8 @@ class SmartMiniSplitController:
         temp_diff = external_temp - self.real_setpoint
         
         self.log_message(
-            f"Check: External temp: {external_temp}°F, Real setpoint: {self.real_setpoint}°F, "
-            f"Current setpoint: {current_setpoint}°F, Delta: {temp_diff}°F, "
+            f"Check: External temp: {external_temp}°{self.temperature_unit}, Real setpoint: {self.real_setpoint}°{self.temperature_unit}, "
+            f"Current setpoint: {current_setpoint}°{self.temperature_unit}, Delta: {temp_diff}°{self.temperature_unit}, "
             f"Cooldown: {in_cooldown}, Override: {self.override_detected}",
             "debug" if self.log_level == "debug" else "info"
         )
@@ -242,10 +245,10 @@ class SmartMiniSplitController:
         # Determine direction of adjustment
         if temp_diff > 0:  # External temperature is higher than setpoint
             new_setpoint = self.real_setpoint + self.adjustment_step
-            reason = f"External temperature {temp_diff}°F higher than setpoint"
+            reason = f"External temperature {temp_diff}°{self.temperature_unit} higher than setpoint"
         else:  # External temperature is lower than setpoint
             new_setpoint = self.real_setpoint - self.adjustment_step
-            reason = f"External temperature {abs(temp_diff)}°F lower than setpoint"
+            reason = f"External temperature {abs(temp_diff)}°{self.temperature_unit} lower than setpoint"
         
         # Call service to set new temperature
         await self.hass.services.async_call(
@@ -260,7 +263,7 @@ class SmartMiniSplitController:
         
         # Log the adjustment
         self.log_message(
-            f"Adjusted setpoint from {self.real_setpoint}°F to {new_setpoint}°F: {reason}",
+            f"Adjusted setpoint from {self.real_setpoint}°{self.temperature_unit} to {new_setpoint}°{self.temperature_unit}: {reason}",
             "info"
         )
 
@@ -282,7 +285,7 @@ class SmartMiniSplitController:
         self.last_adjustment_time = datetime.now()
         
         self.log_message(
-            f"Reset from {current_setpoint}°F to real setpoint {self.real_setpoint}°F: "
+            f"Reset from {current_setpoint}°{self.temperature_unit} to real setpoint {self.real_setpoint}°{self.temperature_unit}: "
             f"External temperature within tolerance",
             "info"
         )
