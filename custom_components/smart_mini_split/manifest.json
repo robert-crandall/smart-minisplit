@@ -1,0 +1,11 @@
+{
+  "domain": "smart_mini_split",
+  "name": "Smart Mini Split Controller",
+  "documentation": "https://github.com/your-username/smart_mini_split",
+  "dependencies": [],
+  "codeowners": ["@your-username"],
+  "requirements": [],
+  "iot_class": "local_polling",
+  "version": "0.1.0",
+  "config_flow": false
+}
