@@ -63,3 +63,63 @@ Clear any manual override flags, allowing the automation to resume normal operat
 - Temperature values are in Fahrenheit.
 - The integration runs checks every minute.
 - Debug logging can be enabled for more detailed information.
+
+## Version Compatibility
+
+This integration is compatible with Home Assistant Core versions that meet these requirements:
+
+| Home Assistant Version | Status |
+|------------------------|--------|
+| 2023.x and newer       | Compatible with latest code |
+| Older versions         | May require import path adjustments |
+
+If you encounter import errors when installing this integration, please check the notes.md file for guidance on adjusting import paths for your specific Home Assistant version.
+
+## Development & Testing
+
+### Virtual Environment
+
+This project uses a Python virtual environment to isolate dependencies:
+
+1. **Create and activate the virtual environment**:
+   ```bash
+   # Option 1: Use the helper script
+   ./activate_venv.sh
+   
+   # Option 2: Manual activation
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+2. **Deactivate the virtual environment when done**:
+   ```bash
+   deactivate
+   ```
+
+### Unit Tests
+
+The integration includes a comprehensive test suite to ensure functionality and prevent regressions:
+
+1. **Install test dependencies**:
+   ```bash
+   ./run_tests.sh --install
+   ```
+
+2. **Run the tests**:
+   ```bash
+   ./run_tests.sh
+   ```
+
+The test suite covers:
+- Core controller functionality
+- Temperature adjustment logic
+- Manual override detection
+- Compatibility layer for different Home Assistant versions
+- Service calls and integration points
+
+### Test Coverage
+
+Tests are organized into:
+- Unit tests for individual components
+- Integration tests for complete functionality
+- Compatibility tests for version support
