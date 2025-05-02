@@ -36,6 +36,19 @@ class MiniSplitController:
         self.last_desired_temp: float | None = None
         self.adjusted_state_active: bool = False
 
+    def debug_entity_attributes(self, entity_id: str) -> None:
+        """Debug helper to print all attributes of an entity."""
+        state_obj = self.hass.states.get(entity_id)
+        if state_obj is None:
+            self.log_message(f"Entity {entity_id} not found", "warning")
+            return
+            
+        self.log_message(f"Entity {entity_id} state: {state_obj.state}", "debug")
+        self.log_message(f"Entity {entity_id} attributes:", "debug")
+        
+        for attr, value in state_obj.attributes.items():
+            self.log_message(f"  - {attr}: {value}", "debug")
+
     def in_cooldown(self) -> bool:
         if not self.last_adjustment:
             return False
@@ -47,9 +60,13 @@ class MiniSplitController:
             self.log_message("Climate entity not available", "warning")
             return None
         set_temp = climate_state.attributes.get("temperature")
-        if set_temp is None:
-            self.log_message("Set temperature not available", "warning")
-            return None
+        if set_temp is not None:
+          return set_temp
+          
+        self.log_message("Set temperature not available", "warning")
+        # Debug all available attributes to see what's available
+        self.debug_entity_attributes("climate.minisplit")
+        return None
 
     def current_temperature(self) -> float | None:
         sensor_state = self.hass.states.get("sensor.awair_element_110243_temperature")
