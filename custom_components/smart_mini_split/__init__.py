@@ -5,20 +5,19 @@ from datetime import datetime, timedelta
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
+# Import from our compatibility layer to handle different Home Assistant versions
+from .compat import (
     CONF_ENTITY_ID,
     ATTR_ENTITY_ID,
     CONF_NAME,
+    ATTR_TEMPERATURE,
+    UnitOfTemperature,
+    CLIMATE_DOMAIN,
+    SERVICE_SET_TEMPERATURE,
 )
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.components.climate.const import (
-    DOMAIN as CLIMATE_DOMAIN,
-    ATTR_TEMPERATURE,
-    UnitOfTemperature,
-    SERVICE_SET_TEMPERATURE,
-)
 from homeassistant.components.logbook import log_entry
 import homeassistant.helpers.entity_registry as er
 
