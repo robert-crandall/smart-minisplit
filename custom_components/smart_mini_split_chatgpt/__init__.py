@@ -46,7 +46,10 @@ class MiniSplitController:
         if climate_state is None:
             self.log_message("Climate entity not available", "warning")
             return None
-        return climate_state.attributes.get("temperature")
+        set_temp = climate_state.attributes.get("temperature")
+        if set_temp is None:
+            self.log_message("Set temperature not available", "warning")
+            return None
 
     def current_temperature(self) -> float | None:
         sensor_state = self.hass.states.get("sensor.awair_element_110243_temperature")
