@@ -33,7 +33,7 @@ CONF_RESET_THRESHOLD = "reset_threshold"
 CONF_COOLDOWN_MINUTES = "cooldown_minutes"
 CONF_LOG_LEVEL = "log_level"
 
-DEFAULT_VALID_RANGE = [64, 74]
+DEFAULT_VALID_RANGE = [63, 72]
 DEFAULT_ADJUSTMENT_STEP = 10
 DEFAULT_TRIGGER_THRESHOLD = 2
 DEFAULT_RESET_THRESHOLD = 1
@@ -148,6 +148,7 @@ class SmartMiniSplitController:
         self.override_detected = False
         self.automation_enabled = True
         self.real_setpoint = None
+        self.max_setpoint = None
         self._unsubscribe_timer = None
 
     async def async_initialize(self):
@@ -155,6 +156,7 @@ class SmartMiniSplitController:
         # Get initial real setpoint from the climate entity
         climate_state = self.hass.states.get(self.entity_id)
         if climate_state is not None:
+            self.max_setpoint = climate_state.attributes.get("max_temp")
             current_temp = climate_state.attributes.get(ATTR_TEMPERATURE)
             if current_temp is not None and self.valid_range[0] <= current_temp <= self.valid_range[1]:
                 self.real_setpoint = current_temp
@@ -248,6 +250,10 @@ class SmartMiniSplitController:
         else:  # External temperature is lower than setpoint
             new_setpoint = self.real_setpoint - self.adjustment_step
             reason = f"External temperature {abs(temp_diff)}°{self.temperature_unit} lower than setpoint"
+
+        if self.max_setpoint is not None and new_setpoint > self.max_setpoint:
+            new_setpoint = self.max_setpoint
+            reason += f", capped at max setpoint {self.max_setpoint}°{self.temperature_unit}"
         
         # Call service to set new temperature
         await self.hass.services.async_call(
