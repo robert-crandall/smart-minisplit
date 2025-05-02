@@ -79,10 +79,11 @@ class MiniSplitController:
         return self.adjusted_state_active and current >= (desired + RESET_THRESHOLD)
 
     def adjust_set_temperature(self, target_temp: float):
-        min_temp = self.hass.states.get("climate.minisplit").attributes.get("min_temp", 50)
-        max_temp = self.hass.states.get("climate.minisplit").attributes.get("max_temp", 90)
+        min_temp = self.hass.states.get("climate.minisplit").attributes.get("min_temp", 55)
+        max_temp = self.hass.states.get("climate.minisplit").attributes.get("max_temp", 82)
         new_temp = min(max(target_temp, min_temp), max_temp)
         self.log_message(f"Adjusting set temperature to {new_temp}", "info")
+        return
         self.hass.services.call("climate", "set_temperature", {
             "entity_id": "climate.minisplit",
             "temperature": new_temp
@@ -112,12 +113,17 @@ class MiniSplitController:
             self.log_message("Skipping update: missing temperature data", "warning")
             return
 
-        self.log_message(f"Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
-
         if self.needs_heat(current, desired):
-            self.adjust_set_temperature(80)  # Example target temp
+            self.log_message(f"Needs heat. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
+            self.adjust_set_temperature(82)
         elif self.should_reset(current, desired):
+            self.log_message(f"Needs to reset set temperature. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
             self.reset_set_temperature()
+        else:
+            if self.adjusted_state_active:
+                self.log_message(f"No adjustment needed, but adjusted state is active. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
+            else:
+                self.log_message(f"No adjustment needed and not adjusted state. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
 
     def log_message(self, message, level="info"):
         """Log message to Home Assistant logbook and logger."""
