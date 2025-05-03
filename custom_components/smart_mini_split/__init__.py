@@ -20,6 +20,8 @@ DEFAULT_TRIGGER_THRESHOLD = 2.0  # Degrees
 DEFAULT_RESET_THRESHOLD = 1.0
 DEFAULT_VALID_TEMP_RANGE = [60, 74]
 DEFAULT_LOG_LEVEL = "info"
+DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
+DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     # Read options from configuration, with defaults
@@ -29,6 +31,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     trigger_threshold = domain_config.get("trigger_threshold", DEFAULT_TRIGGER_THRESHOLD)
     reset_threshold = domain_config.get("reset_threshold", DEFAULT_RESET_THRESHOLD)
     valid_temp_range = domain_config.get("valid_temp_range", DEFAULT_VALID_TEMP_RANGE)
+    climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
+    external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
     controller = MiniSplitController(
         hass,
         log_level=log_level,
@@ -36,6 +40,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         trigger_threshold=trigger_threshold,
         reset_threshold=reset_threshold,
         valid_temp_range=valid_temp_range,
+        climate_entity=climate_entity,
+        external_temp_sensor=external_temp_sensor,
     )
     async def run_update(now):
         await controller.update(now)
@@ -43,7 +49,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, trigger_threshold: float = DEFAULT_TRIGGER_THRESHOLD, reset_threshold: float = DEFAULT_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, trigger_threshold: float = DEFAULT_TRIGGER_THRESHOLD, reset_threshold: float = DEFAULT_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -53,17 +59,19 @@ class MiniSplitController:
         self.trigger_threshold = trigger_threshold
         self.reset_threshold = reset_threshold
         self.valid_temp_range = valid_temp_range
+        self.climate_entity = climate_entity
+        self.external_temp_sensor = external_temp_sensor
 
-    def debug_entity_attributes(self, entity_id: str) -> None:
+    def debug_entity_attributes(self, entity_id: str = None) -> None:
         """Debug helper to print all attributes of an entity."""
+        if entity_id is None:
+            entity_id = self.climate_entity
         state_obj = self.hass.states.get(entity_id)
         if state_obj is None:
             self.log_message(f"Entity {entity_id} not found", "warning")
             return
-            
         self.log_message(f"Entity {entity_id} state: {state_obj.state}", "debug")
         self.log_message(f"Entity {entity_id} attributes:", "debug")
-        
         for attr, value in state_obj.attributes.items():
             self.log_message(f"  - {attr}: {value}", "debug")
 
@@ -73,21 +81,20 @@ class MiniSplitController:
         return (datetime.now() - self.last_adjustment) < timedelta(minutes=self.cooldown_minutes)
 
     def get_set_temperature(self) -> float | None:
-        climate_state = self.hass.states.get("climate.minisplit")
+        climate_state = self.hass.states.get(self.climate_entity)
         if climate_state is None:
             self.log_message("Climate entity not available yet.", "warning")
             return None
         set_temp = climate_state.attributes.get("temperature")
         if set_temp is not None:
             return set_temp
-          
         self.log_message("Set temperature not available yet.", "warning")
         # Debug all available attributes to see what's available
-        self.debug_entity_attributes("climate.minisplit")
+        self.debug_entity_attributes(self.climate_entity)
         return None
 
     def current_temperature(self) -> float | None:
-        sensor_state = self.hass.states.get("sensor.awair_element_110243_temperature")
+        sensor_state = self.hass.states.get(self.external_temp_sensor)
         if sensor_state is None:
             self.log_message("Temperature sensor not available", "warning")
             return None
@@ -105,6 +112,12 @@ class MiniSplitController:
             self.last_desired_temp = set_temp
             self.adjusted_state_active = False
             return set_temp
+        if set_temp is None and self.last_desired_temp is None:
+            # Likely HASS has restarted and we don't have a set temperature yet
+            # If the real unit is in overheat mode, we need to set it to a default value so it doesn't stay that way.
+            default_temp = int((self.valid_temp_range[0] + self.valid_temp_range[1]) / 2)
+            self.log_message(f"Set temperature not available. Defaulting to {default_temp}", "info")
+            return default_temp
         return self.last_desired_temp
 
     def needs_heat(self, current: float, desired: float) -> bool:
@@ -118,18 +131,19 @@ class MiniSplitController:
         return self.adjusted_state_active and current >= (desired + self.reset_threshold)
 
     async def adjust_set_temperature(self, target_temp: float):
-        min_temp = self.hass.states.get("climate.minisplit").attributes.get("min_temp", 55)
-        max_temp = self.hass.states.get("climate.minisplit").attributes.get("max_temp", 82)
+        climate_state = self.hass.states.get(self.climate_entity)
+        min_temp = climate_state.attributes.get("min_temp", 55) if climate_state else 55
+        max_temp = climate_state.attributes.get("max_temp", 82) if climate_state else 82
         if min_temp is not None:
-          target_temp = max(min_temp, target_temp)
+            target_temp = max(min_temp, target_temp)
         if max_temp is not None:
-          target_temp = min(max_temp, target_temp)
+            target_temp = min(max_temp, target_temp)
         self.log_message(f"Adjusting set temperature to {target_temp}", "info")
         await self.hass.services.async_call(
             "climate",
             "set_temperature",
             {
-                "entity_id": "climate.minisplit",
+                "entity_id": self.climate_entity,
                 "temperature": target_temp
             },
             blocking=True,
@@ -143,7 +157,7 @@ class MiniSplitController:
             "climate",
             "set_temperature",
             {
-                "entity_id": "climate.minisplit",
+                "entity_id": self.climate_entity,
                 "temperature": self.last_desired_temp
             },
             blocking=True,

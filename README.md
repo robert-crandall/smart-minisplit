@@ -21,8 +21,8 @@ Add the following to your `configuration.yaml` file:
 
 ```yaml
 smart_mini_split:
-  entity_id: climate.minisplit  # Your mini split climate entity
-  external_sensor: sensor.awair_element_110243_temperature  # Your external temperature sensor
+  climate_entity: climate.minisplit  # Your mini split climate entity
+  external_temp_sensor: sensor.awair_element_110243_temperature  # Your external temperature sensor
   valid_temp_range: [60, 74]  # Range of temperatures considered to be manually set. Ranges outside this are considered set by automation.
   trigger_threshold: 1.5  # Temperature difference that triggers an adjustment (degrees F)
   reset_threshold: 1.5  # Temperature difference to return to normal setpoint (degrees F)
