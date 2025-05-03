@@ -5,10 +5,9 @@ A custom Home Assistant integration that intelligently manages a mini split heat
 ## Features
 
 - **External Temperature-Based Control:** Adjusts the mini split's set temperature up/down based on the difference between the external temperature reading and the target setpoint.
-- **Smart Override Detection:** Recognizes manual user overrides and temporarily suspends automatic adjustments.
 - **Cooldown Timer:** Prevents frequent adjustments with a configurable cooldown period.
+- **Custom Heat Conditions:** Can start heating at a given difference, and heat until a threshold has been hit.
 - **Logbook Logging:** Logs all activities and decisions to the Home Assistant logbook.
-- **Custom Services:** Service calls to force adjustments, toggle the automation, and clear overrides.
 
 ## Installation
 
@@ -32,29 +31,12 @@ smart_mini_split:
   log_level: info  # 'info' or 'debug'
 ```
 
-## Services
-
-### `smart_mini_split.force_adjustment`
-
-Force an immediate temperature check and adjustment, bypassing the cooldown timer.
-
-### `smart_mini_split.toggle_automation`
-
-Enable or disable the automation.
-
-Parameters:
-- `enabled`: Boolean, whether to enable or disable the automation.
-
-### `smart_mini_split.clear_override`
-
-Clear any manual override flags, allowing the automation to resume normal operation.
-
 ## How It Works
 
 1. The integration compares the external temperature sensor reading with the mini split's set temperature.
-2. If the difference exceeds the trigger threshold, it adjusts the mini split's temperature up or down by the adjustment step.
-3. When the external temperature returns to within the reset threshold of the real setpoint, it returns the mini split to the original setting.
-4. If a user manually changes the temperature to a value within the valid range, the integration temporarily suspends automation.
+2. If the difference exceeds the trigger threshold, it adjusts the mini split's temperature up to start the heat.
+3. When the external temperature reached the set temperature + reset threshold, it returns the minisplit's set temperature back to the starting point.
+4. If a user manually changes the temperature to a value within the valid range, the integration uses this as the new set temperature.
 5. All actions are logged to the Home Assistant logbook for transparency.
 
 ## Notes
@@ -63,63 +45,3 @@ Clear any manual override flags, allowing the automation to resume normal operat
 - Temperature values are in Fahrenheit.
 - The integration runs checks every minute.
 - Debug logging can be enabled for more detailed information.
-
-## Version Compatibility
-
-This integration is compatible with Home Assistant Core versions that meet these requirements:
-
-| Home Assistant Version | Status |
-|------------------------|--------|
-| 2023.x and newer       | Compatible with latest code |
-| Older versions         | May require import path adjustments |
-
-If you encounter import errors when installing this integration, please check the notes.md file for guidance on adjusting import paths for your specific Home Assistant version.
-
-## Development & Testing
-
-### Virtual Environment
-
-This project uses a Python virtual environment to isolate dependencies:
-
-1. **Create and activate the virtual environment**:
-   ```bash
-   # Option 1: Use the helper script
-   ./activate_venv.sh
-   
-   # Option 2: Manual activation
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-2. **Deactivate the virtual environment when done**:
-   ```bash
-   deactivate
-   ```
-
-### Unit Tests
-
-The integration includes a comprehensive test suite to ensure functionality and prevent regressions:
-
-1. **Install test dependencies**:
-   ```bash
-   ./run_tests.sh --install
-   ```
-
-2. **Run the tests**:
-   ```bash
-   ./run_tests.sh
-   ```
-
-The test suite covers:
-- Core controller functionality
-- Temperature adjustment logic
-- Manual override detection
-- Compatibility layer for different Home Assistant versions
-- Service calls and integration points
-
-### Test Coverage
-
-Tests are organized into:
-- Unit tests for individual components
-- Integration tests for complete functionality
-- Compatibility tests for version support
