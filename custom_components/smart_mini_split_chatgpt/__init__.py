@@ -86,7 +86,7 @@ class MiniSplitController:
             self.adjusted_state_active = False
             return set_temp
         # Use the fallback sequence: last_desired_temp -> set_temp -> default range minimum
-        return self.last_desired_temp or set_temp or VALID_TEMP_RANGE[0]
+        return self.last_desired_temp or set_temp
 
     def needs_heat(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
@@ -98,25 +98,37 @@ class MiniSplitController:
             return False
         return self.adjusted_state_active and current >= (desired + RESET_THRESHOLD)
 
-    def adjust_set_temperature(self, target_temp: float):
+    async def adjust_set_temperature(self, target_temp: float):
         min_temp = self.hass.states.get("climate.minisplit").attributes.get("min_temp", 55)
         max_temp = self.hass.states.get("climate.minisplit").attributes.get("max_temp", 82)
-        new_temp = min(max(target_temp, min_temp), max_temp)
-        self.log_message(f"Adjusting set temperature to {new_temp}", "info")
-        return
-        self.hass.services.call("climate", "set_temperature", {
-            "entity_id": "climate.minisplit",
-            "temperature": new_temp
-        })
+        if min_temp is not None:
+          target_temp = max(min_temp, target_temp)
+        if max_temp is not None:
+          target_temp = min(max_temp, target_temp)
+        self.log_message(f"Adjusting set temperature to {target_temp}", "info")
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {
+                "entity_id": "climate.minisplit",
+                "temperature": target_temp
+            },
+            blocking=True,
+        )
         self.last_adjustment = datetime.now()
         self.adjusted_state_active = True
 
-    def reset_set_temperature(self):
+    async def reset_set_temperature(self):
         self.log_message(f"Resetting temperature to {self.last_desired_temp}", "info")
-        self.hass.services.call("climate", "set_temperature", {
-            "entity_id": "climate.minisplit",
-            "temperature": self.last_desired_temp
-        })
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            {
+                "entity_id": "climate.minisplit",
+                "temperature": self.last_desired_temp
+            },
+            blocking=True,
+        )
         self.last_adjustment = datetime.now()
         self.adjusted_state_active = False
 
@@ -135,10 +147,10 @@ class MiniSplitController:
 
         if self.needs_heat(current, desired):
             self.log_message(f"Needs heat. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
-            self.adjust_set_temperature(82)
+            await self.adjust_set_temperature(82)
         elif self.should_reset(current, desired):
             self.log_message(f"Needs to reset set temperature. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
-            self.reset_set_temperature()
+            await self.reset_set_temperature()
         else:
             if self.adjusted_state_active:
                 self.log_message(f"No adjustment needed, but adjusted state is active. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
