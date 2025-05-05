@@ -16,8 +16,10 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "smart_mini_split"
 DEFAULT_COOLDOWN_MINUTES = 5
-DEFAULT_HEATING_THRESHOLD = 2.0  # Degrees
-DEFAULT_RESET_THRESHOLD = 1.0
+DEFAULT_HEATING_THRESHOLD = 1.0
+DEFAULT_HEATING_RESET_THRESHOLD = 1.0
+DEFAULT_COOLING_THRESHOLD = 1.0
+DEFAULT_COOLING_RESET_THRESHOLD = 1.0
 DEFAULT_VALID_TEMP_RANGE = [60, 74]
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
@@ -33,8 +35,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     log_level = domain_config.get("log_level", DEFAULT_LOG_LEVEL)
     cooldown_minutes = domain_config.get("cooldown_minutes", DEFAULT_COOLDOWN_MINUTES)
     heating_threshold = domain_config.get("heating_threshold", DEFAULT_HEATING_THRESHOLD)
-    reset_threshold = domain_config.get("reset_threshold", DEFAULT_RESET_THRESHOLD)
-    valid_temp_range = domain_config.get("valid_temp_range", DEFAULT_VALID_TEMP_RANGE)
+    cooling_threshold = domain_config.get("cooling_threshold", DEFAULT_COOLING_THRESHOLD)
+    heating_reset_threshold = domain_config.get("heating_reset_threshold", DEFAULT_HEATING_RESET_THRESHOLD)
+    cooling_reset_threshold = domain_config.get("cooling_reset_threshold", DEFAULT_COOLING_RESET_THRESHOLD) valid_temp_range = domain_config.get("valid_temp_range", DEFAULT_VALID_TEMP_RANGE)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
     external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
     controller = MiniSplitController(
@@ -42,7 +45,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         log_level=log_level,
         cooldown_minutes=cooldown_minutes,
         heating_threshold=heating_threshold,
-        reset_threshold=reset_threshold,
+        cooling_threshold=cooling_threshold,
+        heating_reset_threshold=heating_reset_threshold,
+        cooling_reset_threshold=cooling_reset_threshold,
         valid_temp_range=valid_temp_range,
         climate_entity=climate_entity,
         external_temp_sensor=external_temp_sensor,
@@ -53,7 +58,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, reset_threshold: float = DEFAULT_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -61,7 +66,9 @@ class MiniSplitController:
         self.log_level = log_level.lower()
         self.cooldown_minutes = cooldown_minutes
         self.heating_threshold = heating_threshold
-        self.reset_threshold = reset_threshold
+        self.cooling_threshold = cooling_threshold
+        self.heating_reset_threshold = heating_reset_threshold
+        self.cooling_reset_threshold = cooling_reset_threshold
         self.valid_temp_range = valid_temp_range
         self.climate_entity = climate_entity
         self.external_temp_sensor = external_temp_sensor
@@ -128,28 +135,36 @@ class MiniSplitController:
         self.log_message(f"Desired temperature could not be read. Likely due to system starting up.", "debug")
         return None
 
+    # TODO: Do not use if last cooling event was less than 15 minutes ago
     def needs_heat(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
             return False
         return current < (desired - self.heating_threshold)
 
+    # TODO:
+    # Do not use if last heating event was less than 15 minutes ago
     def needs_cooling(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
             return False
-        offset = getattr(self, "cooling_trigger_offset", 2.0)
-        return current > (desired + offset)
+        return current > (desired + self.cooling_threshold)
 
+    # TODO:
+    # Can this be moved so it can be automated?
     def cooling_allowed_now(self) -> bool:
         if not getattr(self, "day_cooling_enabled", False):
             return False
         current_hour = datetime.now().hour
         return current_hour < getattr(self, "cooling_cutoff_hour", 17)
 
+    # TODO:
+    # This needs to support cooling and heating
     def should_reset(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
             return False
-        return self.adjusted_state_active and current >= (desired + self.reset_threshold)
+        return self.adjusted_state_active and current >= (desired + self.heating_reset_threshold)
 
+    # TODO:
+    # Set mode to heat or cool
     async def adjust_set_temperature(self, target_temp: float):
         climate_state = self.hass.states.get(self.climate_entity)
         min_temp = climate_state.attributes.get("min_temp", 55) if climate_state else 55
@@ -171,6 +186,8 @@ class MiniSplitController:
         self.last_adjustment = datetime.now()
         self.adjusted_state_active = True
 
+    # TODO:
+    # Set mode to heat or cool
     async def reset_set_temperature(self):
         self.log_message(f"Resetting temperature to {self.last_desired_temp}", "info")
         await self.hass.services.async_call(
@@ -201,6 +218,9 @@ class MiniSplitController:
         if self.needs_heat(current, desired):
             self.log_message(f"Needs heat. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
             await self.adjust_set_temperature(82)
+        elif self.cooling_allowed_now() and self.needs_cooling(current, desired):
+            self.log_message(f"Needs cooling. Current={current}, Desired={desired}", "debug")
+            await self.adjust_set_temperature(desired)
         elif self.should_reset(current, desired):
             self.log_message(f"Needs to reset set temperature. Current={current}, Desired={desired}, Adjusted={self.adjusted_state_active}", "debug")
             await self.reset_set_temperature()
