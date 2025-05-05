@@ -112,13 +112,17 @@ class MiniSplitController:
             self.last_desired_temp = set_temp
             self.adjusted_state_active = False
             return set_temp
-        if set_temp is None and self.last_desired_temp is None:
-            # Likely HASS has restarted and we don't have a set temperature yet
-            # If the real unit is in overheat mode, we need to set it to a default value so it doesn't stay that way.
+        if self.last_desired_temp is not None:
+            self.log_message(f"Set temperature could not read a valid temperature. Using last desired temperature: {self.last_desired_temp}", "debug")
+            return self.last_desired_temp
+        if set_temp is not None:
+            # Set temperature is out of range, but no last desired temperature is available.
+            # This is likely due to overheating or cooling, and hass was reset.
             default_temp = int((self.valid_temp_range[0] + self.valid_temp_range[1]) / 2)
-            self.log_message(f"Set temperature not available. Defaulting to {default_temp}", "info")
+            self.log_message(f"Set temperature is out of normal range. Defaulting to {default_temp}", "info")
             return default_temp
-        return self.last_desired_temp
+        self.log_message(f"Desired temperature could not be read. Likely due to system starting up.", "debug")
+        return None
 
     def needs_heat(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
