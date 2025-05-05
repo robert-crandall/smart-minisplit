@@ -21,13 +21,23 @@ Add the following to your `configuration.yaml` file:
 
 ```yaml
 smart_mini_split:
+  enabled: true # Set to false to disable
   climate_entity: climate.minisplit  # Your mini split climate entity
   external_temp_sensor: sensor.awair_element_110243_temperature  # Your external temperature sensor
-  valid_temp_range: [60, 74]  # Range of temperatures considered to be manually set. Ranges outside this are considered set by automation.
-  trigger_threshold: 1.5  # Temperature difference that triggers an adjustment (degrees F)
-  reset_threshold: 1.5  # Temperature difference to return to normal setpoint (degrees F)
-  cooldown_minutes: 5  # Minimum time between adjustments
+  valid_temp_range: [60, 72]  # Range of temperatures considered to be manually set. Ranges outside this are considered set by automation.
+  heating_threshold: 1.0  # Initiate heating when the actual temperature is this far below desired temperature
+  cooling_threshold: 2.0  # Initiate cooling when the actual temperature is this far above desired temperature
+  heating_reset_threshold: 1.5  # Stop heating when the actual temperature exceeds the desired temperature by this much
+  cooling_reset_threshold: 1.0  # Stop cooling when the actual temperature is lower than the desired temperature by this much. Probably won't do anything because cooling sets the AC to desired_temperature.
+  cooldown_minutes: 5  # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
+  cooling_input_boolean: "input_boolean.cooling_enabled" # Configuration to enable cooling
   log_level: info  # 'info' or 'debug'
+
+input_boolean:
+  cooling_enabled:
+    name: Allow Cooling in the minisplit
+    icon: mdi:snowflake
+    initial: false
 ```
 
 ## How It Works
