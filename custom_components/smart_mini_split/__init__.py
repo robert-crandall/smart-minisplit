@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "smart_mini_split"
 DEFAULT_COOLDOWN_MINUTES = 5
-DEFAULT_TRIGGER_THRESHOLD = 2.0  # Degrees
+DEFAULT_HEATING_THRESHOLD = 2.0  # Degrees
 DEFAULT_RESET_THRESHOLD = 1.0
 DEFAULT_VALID_TEMP_RANGE = [60, 74]
 DEFAULT_LOG_LEVEL = "info"
@@ -32,7 +32,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         return True
     log_level = domain_config.get("log_level", DEFAULT_LOG_LEVEL)
     cooldown_minutes = domain_config.get("cooldown_minutes", DEFAULT_COOLDOWN_MINUTES)
-    trigger_threshold = domain_config.get("trigger_threshold", DEFAULT_TRIGGER_THRESHOLD)
+    heating_threshold = domain_config.get("heating_threshold", DEFAULT_HEATING_THRESHOLD)
     reset_threshold = domain_config.get("reset_threshold", DEFAULT_RESET_THRESHOLD)
     valid_temp_range = domain_config.get("valid_temp_range", DEFAULT_VALID_TEMP_RANGE)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
@@ -41,7 +41,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         hass,
         log_level=log_level,
         cooldown_minutes=cooldown_minutes,
-        trigger_threshold=trigger_threshold,
+        heating_threshold=heating_threshold,
         reset_threshold=reset_threshold,
         valid_temp_range=valid_temp_range,
         climate_entity=climate_entity,
@@ -53,14 +53,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, trigger_threshold: float = DEFAULT_TRIGGER_THRESHOLD, reset_threshold: float = DEFAULT_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, reset_threshold: float = DEFAULT_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
         self.adjusted_state_active: bool = False
         self.log_level = log_level.lower()
         self.cooldown_minutes = cooldown_minutes
-        self.trigger_threshold = trigger_threshold
+        self.heating_threshold = heating_threshold
         self.reset_threshold = reset_threshold
         self.valid_temp_range = valid_temp_range
         self.climate_entity = climate_entity
@@ -131,7 +131,7 @@ class MiniSplitController:
     def needs_heat(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
             return False
-        return current < (desired - self.trigger_threshold)
+        return current < (desired - self.heating_threshold)
 
     def needs_cooling(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
