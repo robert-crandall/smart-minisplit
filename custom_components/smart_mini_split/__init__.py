@@ -24,6 +24,7 @@ DEFAULT_VALID_TEMP_RANGE = [60, 74]
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
 DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
+DEFAULT_COOLING_INPUT_BOOLEAN = "input_boolean.cooling_enabled"
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     # Read options from configuration, with defaults
@@ -41,6 +42,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     valid_temp_range = domain_config.get("valid_temp_range", DEFAULT_VALID_TEMP_RANGE)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
     external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
+    cooling_input_boolean = domain_config.get("cooling_input_boolean", DEFAULT_COOLING_INPUT_BOOLEAN)
     controller = MiniSplitController(
         hass,
         log_level=log_level,
@@ -52,6 +54,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         valid_temp_range=valid_temp_range,
         climate_entity=climate_entity,
         external_temp_sensor=external_temp_sensor,
+        cooling_input_boolean=cooling_input_boolean,
     )
     async def run_update(now):
         await controller.update(now)
@@ -59,7 +62,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR, cooling_input_boolean: str = DEFAULT_COOLING_INPUT_BOOLEAN):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -73,6 +76,7 @@ class MiniSplitController:
         self.valid_temp_range = valid_temp_range
         self.climate_entity = climate_entity
         self.external_temp_sensor = external_temp_sensor
+        self.cooling_input_boolean = cooling_input_boolean
         self.last_heating_event: datetime | None = None
         self.last_cooling_event: datetime | None = None
 
@@ -157,11 +161,16 @@ class MiniSplitController:
         return current > (desired + self.cooling_threshold)
 
     def cooling_allowed_now(self) -> bool:
-        # NOTE: This can be moved to an automation or exposed as a config option for more flexibility.
-        if not getattr(self, "day_cooling_enabled", False):
+        """Check if cooling is allowed by reading the state of an input_boolean entity."""
+        state_obj = self.hass.states.get(self.cooling_input_boolean)
+        if state_obj is None:
+            self.log_message(f"Cooling allowed input_boolean '{self.cooling_input_boolean}' not found, assuming disabled.", "debug")
             return False
-        current_hour = datetime.now().hour
-        return current_hour < getattr(self, "cooling_cutoff_hour", 17)
+        if state_obj.state == "on":
+            self.log_message(f"Cooling is allowed: {self.cooling_input_boolean} is on.", "debug")
+            return True
+        self.log_message(f"Cooling not allowed: {self.cooling_input_boolean} is not on.", "debug")
+        return False
 
     def last_mode(self) -> str | None:
         """Return 'heat', 'cool', or None depending on which event was most recent."""
