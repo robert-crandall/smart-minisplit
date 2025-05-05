@@ -26,6 +26,10 @@ DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     # Read options from configuration, with defaults
     domain_config = config.get(DOMAIN, {})
+    enabled = domain_config.get("enabled", True)
+    if not enabled:
+        _LOGGER.info("Smart Mini Split integration is disabled via configuration.")
+        return True
     log_level = domain_config.get("log_level", DEFAULT_LOG_LEVEL)
     cooldown_minutes = domain_config.get("cooldown_minutes", DEFAULT_COOLDOWN_MINUTES)
     trigger_threshold = domain_config.get("trigger_threshold", DEFAULT_TRIGGER_THRESHOLD)
@@ -128,6 +132,18 @@ class MiniSplitController:
         if current is None or desired is None:
             return False
         return current < (desired - self.trigger_threshold)
+
+    def needs_cooling(self, current: float, desired: float) -> bool:
+        if current is None or desired is None:
+            return False
+        offset = getattr(self, "cooling_trigger_offset", 2.0)
+        return current > (desired + offset)
+
+    def cooling_allowed_now(self) -> bool:
+        if not getattr(self, "day_cooling_enabled", False):
+            return False
+        current_hour = datetime.now().hour
+        return current_hour < getattr(self, "cooling_cutoff_hour", 17)
 
     def should_reset(self, current: float, desired: float) -> bool:
         if current is None or desired is None:
