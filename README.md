@@ -28,16 +28,26 @@ smart_mini_split:
   heating_threshold: 1.0  # Initiate heating when the actual temperature is this far below desired temperature
   cooling_threshold: 2.0  # Initiate cooling when the actual temperature is this far above desired temperature
   heating_reset_threshold: 1.5  # Stop heating when the actual temperature exceeds the desired temperature by this much
-  cooling_reset_threshold: 1.0  # Stop cooling when the actual temperature is lower than the desired temperature by this much. Probably won't do anything because cooling sets the AC to desired_temperature.
+  cooling_reset_threshold: 1.0  # Not used currently. Stop cooling when the actual temperature is lower than the desired temperature by this much. Probably won't do anything because cooling sets the AC to desired_temperature.
   cooldown_minutes: 5  # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
   cooling_input_boolean: "input_boolean.cooling_enabled" # Configuration to enable cooling
+  cooling_setpoint_input: "input_number.cooling_setpoint" # Use this setpoint when cooling. Cooling will initiate when temperature is this + cooling_threshold.
   log_level: info  # 'info' or 'debug'
 
 input_boolean:
   cooling_enabled:
     name: Allow Cooling in the minisplit
     icon: mdi:snowflake
-    initial: false
+    initial: true
+
+input_number:
+  cooling_setpoint:
+    name: Cooling Setpoint
+    min: 60
+    max: 80
+    step: 1
+    unit_of_measurement: "°F"
+    mode: slider
 ```
 
 ## How It Works
