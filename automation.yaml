@@ -1,0 +1,94 @@
+- id: "1512645904682"
+  alias: Minisplit - 7am Weekday Heat 70 Quiet Off
+  trigger:
+    - trigger: time
+      at: "07:00:00"
+  condition:
+    - condition: time
+      weekday: [mon, tue, wed, thu, fri]
+  action:
+    - action: switch.turn_off
+      data:
+        entity_id: switch.minisplit_quiet
+    - action: climate.set_swing_mode
+      data:
+        swing_mode: both
+    - action: input_number.set_value
+      data:
+        value: 74
+        entity_id: input_number.cooling_setpoint
+    - service: input_number.set_value
+      data:
+        entity_id: input_number.heating_setpoint
+        value: 70
+  mode: single
+
+- id: "1512645904683"
+  alias: Minisplit - 8am Quiet Mode On
+  trigger:
+    - trigger: time
+      at: "08:00:00"
+  action:
+    - action: switch.turn_on
+      data:
+        entity_id: switch.minisplit_quiet
+    - action: climate.set_swing_mode
+      data:
+        swing_mode: both
+    - action: input_boolean.turn_on # Turn on cooling. It should be on anyway.
+      data:
+        entity_id: input_boolean.cooling_enabled
+    - action: input_boolean.turn_on # Turn on heating. It should be on anyway.
+      data:
+        entity_id: input_boolean.heating_enabled
+  mode: single
+
+- id: "1746284994938"
+  alias: Minisplit - 12pm 68
+  trigger:
+    - trigger: time
+      at: "12:00:00"
+  action:
+    - action: input_number.set_value
+      data:
+        value: 72
+        entity_id: input_number.cooling_setpoint
+    - service: input_number.set_value
+      data:
+        entity_id: input_number.heating_setpoint
+        value: 68
+  mode: single
+
+- id: "1746284994029"
+  alias: Minisplit - 4pm 66
+  trigger:
+    - trigger: time
+      at: "16:00:00"
+  action:
+    - action: input_number.set_value
+      data:
+        value: 72
+        entity_id: input_number.cooling_setpoint
+    - service: input_number.set_value
+      data:
+        entity_id: input_number.heating_setpoint
+        value: 66
+  mode: single
+
+- id: "1746284994748"
+  alias: Minisplit - 5:30pm and 10:00pm 61
+  trigger:
+    - trigger: time
+      at: "17:30:00"
+    - trigger: time
+      at: "22:00:00"
+  action:
+    - action: input_number.set_value
+      data:
+        value: 76
+        entity_id: input_number.cooling_setpoint
+    - service: input_number.set_value
+      data:
+        entity_id: input_number.heating_setpoint
+        value: 64
+  mode: single
