@@ -10,17 +10,19 @@
     - action: switch.turn_off
       data:
         entity_id: switch.minisplit_quiet
-    - action: climate.set_swing_mode
-      data:
-        swing_mode: both
     - action: input_number.set_value
       data:
         value: 74
         entity_id: input_number.cooling_setpoint
-    - service: input_number.set_value
+    - action: input_number.set_value
       data:
         entity_id: input_number.heating_setpoint
         value: 70
+    - action: climate.set_swing_mode
+      data:
+        swing_mode: both
+        entity_id: climate.minisplit
+    - action: smart_mini_split.force_reset
   mode: single
 
 - id: "1512645904683"
@@ -32,15 +34,17 @@
     - action: switch.turn_on
       data:
         entity_id: switch.minisplit_quiet
-    - action: climate.set_swing_mode
-      data:
-        swing_mode: both
     - action: input_boolean.turn_on # Turn on cooling. It should be on anyway.
       data:
         entity_id: input_boolean.cooling_enabled
     - action: input_boolean.turn_on # Turn on heating. It should be on anyway.
       data:
         entity_id: input_boolean.heating_enabled
+    - action: climate.set_swing_mode
+      data:
+        swing_mode: both
+        entity_id: climate.minisplit
+    - action: smart_mini_split.force_reset
   mode: single
 
 - id: "1746284994938"
@@ -53,10 +57,11 @@
       data:
         value: 72
         entity_id: input_number.cooling_setpoint
-    - service: input_number.set_value
+    - action: input_number.set_value
       data:
         entity_id: input_number.heating_setpoint
         value: 68
+    - action: smart_mini_split.force_reset
   mode: single
 
 - id: "1746284994029"
@@ -69,10 +74,11 @@
       data:
         value: 72
         entity_id: input_number.cooling_setpoint
-    - service: input_number.set_value
+    - action: input_number.set_value
       data:
         entity_id: input_number.heating_setpoint
         value: 66
+    - action: smart_mini_split.force_reset
   mode: single
 
 - id: "1746284994748"
@@ -87,8 +93,9 @@
       data:
         value: 76
         entity_id: input_number.cooling_setpoint
-    - service: input_number.set_value
+    - action: input_number.set_value
       data:
         entity_id: input_number.heating_setpoint
-        value: 64
+        value: 62
+    - action: smart_mini_split.force_reset
   mode: single
