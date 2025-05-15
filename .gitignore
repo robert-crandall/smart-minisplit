@@ -1,3 +1,4 @@
 notes.md
 .coverage
 **/__pycache__/
+custom_components/smart_mini_split/backup.py
