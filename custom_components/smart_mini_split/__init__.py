@@ -132,7 +132,7 @@ class MiniSplitController:
             self.log_message(f"Heating setpoint input '{self.heating_desired_temp_input}' not found. Heating will not be adjusted.", "warning")
             return None
         try:
-            return float(state_obj.state)
+            return int(state_obj.state)
         except (ValueError, TypeError):
             self.log_message(f"Invalid heating setpoint value: {state_obj.state}", "warning")
             return None
@@ -160,7 +160,7 @@ class MiniSplitController:
             self.log_message(f"Cooling setpoint input '{self.cooling_desired_temp_input}' not found. Cooling will not be adjusted.", "warning")
             return None
         try:
-            return float(state_obj.state)
+            return int(state_obj.state)
         except (ValueError, TypeError):
             self.log_message(f"Invalid cooling setpoint value: {state_obj.state}", "warning")
             return None
@@ -321,20 +321,23 @@ class MiniSplitController:
             blocking=True,
         )
 
-    async def climate_has_manually_adjusted_setpoint(self, allow_current_setpoint: bool = False) -> bool:
+    async def climate_has_manually_adjusted_setpoint(
+        self, 
+        allow_current_setpoint: bool = False,
+        current_set_point: float = None,
+        current_mode: str = None,
+       ) -> bool:
         """Check if the set temperature is outside known numbers."""
-        current_mode = self.current_mode()
-        current_set_point = self.get_climate_setpoint()
         if current_mode == "heat":
             if current_set_point is self.heating_active_temp or current_set_point is self.heating_idle_temp:
                 return False
-            if allow_current_setpoint and current_set_point == int(self.heating_desired_temp()):
+            if allow_current_setpoint and current_set_point == self.heating_desired_temp():
                 return False
             return True
         if current_mode == "cool":
             if current_set_point is self.cooling_active_temp or current_set_point is self.cooling_idle_temp:
                 return False
-            if allow_current_setpoint and current_set_point == int(self.cooling_desired_temp()):
+            if allow_current_setpoint and current_set_point == self.cooling_desired_temp():
                 return False
             return True
     
@@ -358,15 +361,19 @@ class MiniSplitController:
             return
 
         external_temperature = self.external_temperature()
-
+        current_set_point = self.get_climate_setpoint()
+        current_mode = self.current_mode()
         # Skip if we don't have valid temperature readings
         if external_temperature is None:
             self.log_message("Skipping update: missing temperature data", "debug")
             return
 
         # Check if there is a manually adjusted temperature
-        if await self.climate_has_manually_adjusted_setpoint(allow_current_setpoint=True):
-            current_set_point = self.get_climate_setpoint()
+        if await self.climate_has_manually_adjusted_setpoint(
+            allow_current_setpoint=True,
+            current_set_point=current_set_point,
+            current_mode=current_mode
+        ):
             if current_set_point is not None:
                 self.log_message(f"Manually adjusted temperature of {current_set_point} detected. Updating setpoint.", "debug")
                 await self.update_desired_temp(current_set_point, self.current_mode())
