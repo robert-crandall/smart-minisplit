@@ -20,7 +20,6 @@ DEFAULT_HEATING_THRESHOLD = 1.0
 DEFAULT_HEATING_RESET_THRESHOLD = 1.0
 DEFAULT_COOLING_THRESHOLD = 1.0
 DEFAULT_COOLING_RESET_THRESHOLD = 1.0
-DEFAULT_VALID_TEMP_RANGE = [60, 74]
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
 DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
@@ -38,7 +37,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     cooling_threshold = domain_config.get("cooling_threshold", DEFAULT_COOLING_THRESHOLD)
     heating_reset_threshold = domain_config.get("heating_reset_threshold", DEFAULT_HEATING_RESET_THRESHOLD)
     cooling_reset_threshold = domain_config.get("cooling_reset_threshold", DEFAULT_COOLING_RESET_THRESHOLD)
-    valid_temp_range = domain_config.get("valid_temp_range", DEFAULT_VALID_TEMP_RANGE)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
     external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
 
@@ -50,7 +48,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         cooling_threshold=cooling_threshold,
         heating_reset_threshold=heating_reset_threshold,
         cooling_reset_threshold=cooling_reset_threshold,
-        valid_temp_range=valid_temp_range,
         climate_entity=climate_entity,
         external_temp_sensor=external_temp_sensor,
     )
@@ -66,7 +63,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, valid_temp_range = DEFAULT_VALID_TEMP_RANGE, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -76,7 +73,6 @@ class MiniSplitController:
         self.cooling_threshold = cooling_threshold
         self.heating_reset_threshold = heating_reset_threshold
         self.cooling_reset_threshold = cooling_reset_threshold
-        self.valid_temp_range = valid_temp_range
         self.climate_entity = climate_entity
         self.external_temp_sensor = external_temp_sensor
 
