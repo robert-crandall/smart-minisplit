@@ -56,7 +56,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
 
     # Force reset of temperature
     async def handle_force_reset(call):
-        await controller.force_reset(None)
+        await controller.force_reset_setpoint(None)
 
     hass.services.async_register(DOMAIN, "force_reset", handle_force_reset)
     async_track_time_interval(hass, run_update, timedelta(minutes=1))
@@ -83,10 +83,10 @@ class MiniSplitController:
         self.last_heating_event_entity = "input_datetime.last_heating_event"
         self.last_cooling_event_entity = "input_datetime.last_cooling_event"
 
-        self.heating_temperature = 82 # Temperature to set for heating
-        self.cooling_temperature = 60 # Temperature to set for cooling
-        self.heating_reset_point = 62 # Temperature to reset heating
-        self.cooling_reset_point = 76 # Temperature to reset cooling
+        self.heating_active_temp = 82 # Temperature to set for heating
+        self.cooling_active_temp = 60 # Temperature to set for cooling
+        self.heating_idle_temp = 62 # Temperature to reset heating
+        self.cooling_idle_temp = 76 # Temperature to reset cooling
 
     def debug_entity_attributes(self, entity_id: str = None) -> None:
         """Debug helper to print all attributes of an entity."""
@@ -236,9 +236,9 @@ class MiniSplitController:
         if set_temperature is None:
             return False
         # Check if the set temperature is within the valid range
-        if set_temperature == self.heating_temperature:
+        if set_temperature == self.heating_active_temp:
             return True
-        if set_temperature == self.cooling_temperature:
+        if set_temperature == self.cooling_active_temp:
             return True
         return False
 
@@ -261,7 +261,7 @@ class MiniSplitController:
         self.log_message(f"Temperature threshold not reached. Adjusted state={climate_is_active}, Current={current}, Heating setpoint={heating_desired_temp}, Cooling setpoint={cooling_desired_temp}, current_mode={current_mode}", "debug")
         return False
 
-    async def _update_desired_temp(self, setpoint: float, mode: str) -> None:
+    async def update_desired_temp(self, setpoint: float, mode: str) -> None:
         if mode == "heat":
             entity_id = self.heating_desired_temp_input
         elif mode == "cool":
@@ -301,20 +301,16 @@ class MiniSplitController:
             blocking=True,
         )
 
-    async def reset_set_temperature(self):
+    async def enforce_idle_mode(self):
         # Determine last mode for reset
         mode = self.current_mode()
-        if mode == "heat":
-            desired_temperature = self.heating_reset_point
-        elif mode == "cool":
-            desired_temperature = self.cooling_reset_point
-        else:
-            self.log_message(f"No valid mode found for reset. Mode is {mode}. Assuming in heating.", "warning")
-            desired_temperature = self.heating_reset_point
-        self.log_message(f"Resetting temperature to {desired_temperature}{' with mode ' + mode if mode else ''}", "info")
+        idle_temperature = self.heating_idle_temp
+        if mode == "cool":
+            idle_temperature = self.cooling_idle_temp
+        self.log_message(f"Resetting temperature to {idle_temperature}{' with mode ' + mode if mode else ''}", "info")
         service_data = {
             "entity_id": self.climate_entity,
-            "temperature": desired_temperature
+            "temperature": idle_temperature
         }
         if mode:
             service_data["hvac_mode"] = mode
@@ -325,36 +321,36 @@ class MiniSplitController:
             blocking=True,
         )
 
-    async def has_manually_adjusted_temperature(self, allow_current_setpoint: bool = False) -> bool:
+    async def climate_has_manually_adjusted_setpoint(self, allow_current_setpoint: bool = False) -> bool:
         """Check if the set temperature is outside known numbers."""
         current_mode = self.current_mode()
         current_set_point = self.get_climate_setpoint()
         if current_mode == "heat":
-            if current_set_point is self.heating_temperature or current_set_point is self.heating_reset_point:
+            if current_set_point is self.heating_active_temp or current_set_point is self.heating_idle_temp:
                 return False
             if allow_current_setpoint and current_set_point == int(self.heating_desired_temp()):
                 return False
             return True
         if current_mode == "cool":
-            if current_set_point is self.cooling_temperature or current_set_point is self.cooling_reset_point:
+            if current_set_point is self.cooling_active_temp or current_set_point is self.cooling_idle_temp:
                 return False
             if allow_current_setpoint and current_set_point == int(self.cooling_desired_temp()):
                 return False
             return True
     
-    async def force_reset(self, call):
+    async def force_reset_setpoint(self, call):
         """Force reset the set temperature."""
-        if not await self.has_manually_adjusted_temperature(allow_current_setpoint=False):
+        if not await self.climate_has_manually_adjusted_setpoint(allow_current_setpoint=False):
             return
         # Determine last mode for reset
         current_mode = self.current_mode()
         current_set_point = self.get_climate_setpoint()
         if current_mode == "heat":
-            self.log_message(f"Should force reset heating. Current={current_set_point}, Desired={self.heating_reset_point}", "info")
-            await self.adjust_climate_setpoint(self.heating_reset_point, mode="heat")
+            self.log_message(f"Should force reset heating. Current={current_set_point}, Desired={self.heating_idle_temp}", "info")
+            await self.adjust_climate_setpoint(self.heating_idle_temp, mode="heat")
         if current_mode == "cool":
-            self.log_message(f"Should force reset cooling. Current={current_set_point}, Desired={self.cooling_reset_point}", "info")
-            await self.adjust_climate_setpoint(self.cooling_reset_point, mode="cool")
+            self.log_message(f"Should force reset cooling. Current={current_set_point}, Desired={self.cooling_idle_temp}", "info")
+            await self.adjust_climate_setpoint(self.cooling_idle_temp, mode="cool")
 
     @callback
     async def update(self, now):
@@ -369,24 +365,24 @@ class MiniSplitController:
             return
 
         # Check if there is a manually adjusted temperature
-        if await self.has_manually_adjusted_temperature(allow_current_setpoint=True):
+        if await self.climate_has_manually_adjusted_setpoint(allow_current_setpoint=True):
             current_set_point = self.get_climate_setpoint()
             if current_set_point is not None:
                 self.log_message(f"Manually adjusted temperature of {current_set_point} detected. Updating setpoint.", "debug")
-                await self._update_desired_temp(current_set_point, self.current_mode())
+                await self.update_desired_temp(current_set_point, self.current_mode())
             return
 
         if self.climate_is_active():
             if self.temperature_reached_threshold(external_temperature):
-                await self.reset_set_temperature()
+                await self.enforce_idle_mode()
             return
 
         if self.needs_heating(external_temperature):
-            await self.adjust_climate_setpoint(self.heating_temperature, mode="heat")
+            await self.adjust_climate_setpoint(self.heating_active_temp, mode="heat")
             return
 
         if self.needs_cooling(external_temperature):
-            await self.adjust_climate_setpoint(self.cooling_temperature, mode="cool")
+            await self.adjust_climate_setpoint(self.cooling_active_temp, mode="cool")
             return
 
     def log_message(self, message, level="info"):
