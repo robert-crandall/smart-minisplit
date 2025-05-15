@@ -15,7 +15,7 @@ except ImportError:
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "smart_mini_split"
-DEFAULT_COOLDOWN_MINUTES = 5
+DEFAULT_WAIT_MINUTES = 5
 DEFAULT_HEATING_THRESHOLD = 1.0
 DEFAULT_HEATING_RESET_THRESHOLD = 1.0
 DEFAULT_COOLING_THRESHOLD = 1.0
@@ -32,7 +32,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         _LOGGER.info("Smart Mini Split integration is disabled via configuration.")
         return True
     log_level = domain_config.get("log_level", DEFAULT_LOG_LEVEL)
-    cooldown_minutes = domain_config.get("cooldown_minutes", DEFAULT_COOLDOWN_MINUTES)
+    wait_period_minutes = domain_config.get("wait_period_minutes", DEFAULT_WAIT_MINUTES)
     heating_threshold = domain_config.get("heating_threshold", DEFAULT_HEATING_THRESHOLD)
     cooling_threshold = domain_config.get("cooling_threshold", DEFAULT_COOLING_THRESHOLD)
     heating_reset_threshold = domain_config.get("heating_reset_threshold", DEFAULT_HEATING_RESET_THRESHOLD)
@@ -43,7 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     controller = MiniSplitController(
         hass,
         log_level=log_level,
-        cooldown_minutes=cooldown_minutes,
+        wait_period_minutes=wait_period_minutes,
         heating_threshold=heating_threshold,
         cooling_threshold=cooling_threshold,
         heating_reset_threshold=heating_reset_threshold,
@@ -63,12 +63,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", cooldown_minutes: int = DEFAULT_COOLDOWN_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
         self.log_level = log_level.lower()
-        self.cooldown_minutes = cooldown_minutes
+        self.wait_period_minutes = wait_period_minutes
         self.heating_threshold = heating_threshold
         self.cooling_threshold = cooling_threshold
         self.heating_reset_threshold = heating_reset_threshold
@@ -101,17 +101,17 @@ class MiniSplitController:
         for attr, value in state_obj.attributes.items():
             self.log_message(f"  - {attr}: {value}", "debug")
 
-    def in_cooldown(self) -> bool:
+    def in_wait_period(self) -> bool:
         now = datetime.now()
         # Check last_adjustment for simple check
-        if self.last_adjustment and (now - self.last_adjustment) < timedelta(minutes=self.cooldown_minutes):
+        if self.last_adjustment and (now - self.last_adjustment) < timedelta(minutes=self.wait_period_minutes):
             return True
         # Check last heating or cooling event
         last_heat = self.get_last_event(self.last_heating_event_entity)
         last_cool = self.get_last_event(self.last_cooling_event_entity)
-        if last_heat and (now - last_heat) < timedelta(minutes=self.cooldown_minutes):
+        if last_heat and (now - last_heat) < timedelta(minutes=self.wait_period_minutes):
             return True
-        if last_cool and (now - last_cool) < timedelta(minutes=self.cooldown_minutes):
+        if last_cool and (now - last_cool) < timedelta(minutes=self.wait_period_minutes):
             return True
         return False
 
@@ -368,7 +368,7 @@ class MiniSplitController:
 
     @callback
     async def update(self, now):
-        if self.in_cooldown():
+        if self.in_wait_period():
             return
 
         current = self.current_temperature()
