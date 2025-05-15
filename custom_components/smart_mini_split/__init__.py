@@ -366,13 +366,13 @@ class MiniSplitController:
         if current_mode == "heat":
             if current_set_point is self.heating_temperature or current_set_point is self.heating_reset_point:
                 return False
-            if allow_current_setpoint and current_set_point is self._get_heating_setpoint():
+            if allow_current_setpoint and current_set_point == int(self._get_heating_setpoint()):
                 return False
             return True
         if current_mode == "cool":
             if current_set_point is self.cooling_temperature or current_set_point is self.cooling_reset_point:
                 return False
-            if allow_current_setpoint and current_set_point is self._get_cooling_setpoint():
+            if allow_current_setpoint and current_set_point == int(self._get_cooling_setpoint()):
                 return False
             return True
     
