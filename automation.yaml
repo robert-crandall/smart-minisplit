@@ -13,10 +13,10 @@
     - action: input_number.set_value
       data:
         value: 74
-        entity_id: input_number.cooling_setpoint
+        entity_id: input_number.cooling_desired_temp
     - action: input_number.set_value
       data:
-        entity_id: input_number.heating_setpoint
+        entity_id: input_number.heating_desired_temp
         value: 70
     - action: climate.set_swing_mode
       data:
@@ -56,10 +56,10 @@
     - action: input_number.set_value
       data:
         value: 72
-        entity_id: input_number.cooling_setpoint
+        entity_id: input_number.cooling_desired_temp
     - action: input_number.set_value
       data:
-        entity_id: input_number.heating_setpoint
+        entity_id: input_number.heating_desired_temp
         value: 68
     - action: smart_mini_split.force_reset
   mode: single
@@ -73,10 +73,10 @@
     - action: input_number.set_value
       data:
         value: 72
-        entity_id: input_number.cooling_setpoint
+        entity_id: input_number.cooling_desired_temp
     - action: input_number.set_value
       data:
-        entity_id: input_number.heating_setpoint
+        entity_id: input_number.heating_desired_temp
         value: 66
     - action: smart_mini_split.force_reset
   mode: single
@@ -92,10 +92,10 @@
     - action: input_number.set_value
       data:
         value: 76
-        entity_id: input_number.cooling_setpoint
+        entity_id: input_number.cooling_desired_temp
     - action: input_number.set_value
       data:
-        entity_id: input_number.heating_setpoint
+        entity_id: input_number.heating_desired_temp
         value: 62
     - action: smart_mini_split.force_reset
   mode: single

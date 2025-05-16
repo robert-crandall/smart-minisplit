@@ -24,13 +24,12 @@ smart_mini_split:
   enabled: true # Set to false to disable
   climate_entity: climate.minisplit  # Your mini split climate entity
   external_temp_sensor: sensor.awair_element_110243_temperature  # Your external temperature sensor
-  valid_temp_range: [60, 72]  # Range of temperatures considered to be manually set. Ranges outside this are considered set by automation.
   heating_threshold: 1.0  # Initiate heating when the actual temperature is this far below desired temperature
   cooling_threshold: 2.0  # Initiate cooling when the actual temperature is this far above desired temperature
   heating_reset_threshold: 1.5  # Stop heating when the actual temperature exceeds the desired temperature by this much
   cooling_reset_threshold: 1.0  # Not used currently. Stop cooling when the actual temperature is lower than the desired temperature by this much. Probably won't do anything because cooling sets the AC to desired_temperature.
-  cooldown_minutes: 5  # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
-  log_level: info  # 'info' or 'debug'
+  wait_period_minutes: 5  # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
+  log_level: debug  # 'info' or 'debug'
 
 input_boolean:
   cooling_enabled:
@@ -41,14 +40,14 @@ input_boolean:
     icon: mdi:flame
 
 input_number:
-  cooling_setpoint:
+  cooling_desired_temp:
     name: Cooling Setpoint
     min: 60
     max: 80
     step: 1
     unit_of_measurement: "°F"
     mode: slider
-  heating_setpoint:
+  heating_desired_temp:
     name: Heating Setpoint
     min: 60
     max: 80
