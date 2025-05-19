@@ -365,6 +365,10 @@ class MiniSplitController:
         if current_mode == "cool":
             self.log_message(f"Should force reset cooling. Current={current_set_point}, Desired={self.cooling_idle_temp}", "info")
             await self.adjust_climate_setpoint(self.cooling_idle_temp, mode="cool")
+        if not self.climate_is_active(climate_setpoint=current_set_point):
+            self.log_message(f"Climate setpoint is still manually adjusted, resetting to an idle state", "info")
+            current_mode = self.current_mode()
+            await self.enforce_idle_mode(current_mode=current_mode)
 
     @callback
     async def update(self, now):
