@@ -178,19 +178,25 @@ class MiniSplitController:
 
     def needs_cooling(self, external_temp: float) -> bool:
         cooling_allowed = self.hass.states.get(self.cooling_input_boolean)
-        if cooling_allowed.state == "on":
-            cooling_desired_temp = self.cooling_desired_temp()
-            if external_temp is None or cooling_desired_temp is None:
-                return False
-            last_heating_event = self.get_last_event(self.last_heating_event_entity)
-            if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
-                self.log_message("Skipping cooling: last heating event was less than 15 minutes ago", "debug")
-                return False
-            if external_temp > (cooling_desired_temp + self.cooling_threshold):
-                self.log_message(f"Cooling needed. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
-                return True
-            # self.log_message(f"Cooling is not needed. Current={current}, Desired={cooling_desired_temp}", "debug")
-        return False
+        if not cooling_allowed.state == "on":
+            return False
+        # Safety check
+        heating_desired_temp = self.heating_desired_temp()
+        cooling_desired_temp = self.cooling_desired_temp()
+        if not heating_desired_temp < (cooling_desired_temp - 2):
+            self.log_message(f"Heating desired temp {heating_desired_temp} is too close to the cooling desired temp {cooling_desired_temp}. Set these more apart to avoid conflicts.", "warning")
+            return False
+            
+        if external_temp is None or cooling_desired_temp is None:
+            return False
+        last_heating_event = self.get_last_event(self.last_heating_event_entity)
+        if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
+            self.log_message("Skipping cooling: last heating event was less than 15 minutes ago", "debug")
+            return False
+        if external_temp > (cooling_desired_temp + self.cooling_threshold):
+            self.log_message(f"Cooling needed. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
+            return True
+        # self.log_message(f"Cooling is not needed. Current={current}, Desired={cooling_desired_temp}", "debug")
 
     def current_mode(self) -> str | None:
         """Return 'heat', 'cool', or None. Looks at the climate entity state."""
