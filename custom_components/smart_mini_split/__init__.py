@@ -219,7 +219,7 @@ class MiniSplitController:
         # self.debug_entity_attributes(self.climate_entity)
         return None
 
-    async def adjust_climate_setpoint(self, target_temp: float, mode: str = None):
+    async def adjust_climate_setpoint(self, target_temp: float, mode: str = None, message: str = None) -> None:
         # Set mode if specified
         service_data = {
             "entity_id": self.climate_entity,
@@ -227,7 +227,12 @@ class MiniSplitController:
         }
         if mode:
             service_data["hvac_mode"] = mode
-        self.log_message(f"Adjusting set temperature to {target_temp}{' with mode ' + mode if mode else ''}", "info")
+        log_message = f"Adjusting set temperature to {target_temp}"
+        if mode:
+            log_message += f" with mode {mode}"
+        if message:
+            log_message += f", {message}"
+        self.log_message(log_message, "info")
         await self.hass.services.async_call(
             "climate",
             "set_temperature",
@@ -240,6 +245,18 @@ class MiniSplitController:
             await self.set_last_event(self.last_heating_event_entity, now_str)
         elif mode == "cool":
             await self.set_last_event(self.last_cooling_event_entity, now_str)
+
+    async def enforce_idle_mode(
+          self,
+          current_mode: str = None,
+        ) -> None:
+        """Enforce idle mode by resetting the set temperature."""
+        # Determine last mode for reset
+
+        idle_temperature = self.heating_idle_temp
+        if current_mode == "cool":
+            idle_temperature = self.cooling_idle_temp
+        await self.adjust_climate_setpoint(idle_temperature, mode=current_mode, message="enforcing idle mode")
 
     def climate_is_active(
           self,
@@ -312,30 +329,6 @@ class MiniSplitController:
                 "entity_id": entity_id,
                 "datetime": dt_str,
             },
-            blocking=True,
-        )
-
-    async def enforce_idle_mode(
-          self,
-          current_mode: str = None,
-        ) -> None:
-        """Enforce idle mode by resetting the set temperature."""
-        # Determine last mode for reset
-
-        idle_temperature = self.heating_idle_temp
-        if current_mode == "cool":
-            idle_temperature = self.cooling_idle_temp
-        self.log_message(f"Resetting temperature to {idle_temperature}{' with mode ' + current_mode if current_mode else ''}", "info")
-        service_data = {
-            "entity_id": self.climate_entity,
-            "temperature": idle_temperature
-        }
-        if current_mode:
-            service_data["hvac_mode"] = current_mode
-        await self.hass.services.async_call(
-            "climate",
-            "set_temperature",
-            service_data,
             blocking=True,
         )
 
