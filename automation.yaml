@@ -12,12 +12,12 @@
         entity_id: switch.minisplit_quiet
     - action: input_number.set_value
       data:
-        value: 74
+        value: 74 # Keep cooling and heating numbers at least 3 degrees apart
         entity_id: input_number.cooling_desired_temp
     - action: input_number.set_value
       data:
         entity_id: input_number.heating_desired_temp
-        value: 70
+        value: 70 # Keep cooling and heating numbers at least 3 degrees apart
     - action: climate.set_swing_mode
       data:
         swing_mode: both
