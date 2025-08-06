@@ -324,8 +324,6 @@ class MiniSplitController:
         heating_desired_temp = self.heating_desired_temp()
         cooling_desired_temp = self.cooling_desired_temp()
         
-        if heating_desired_temp is not None and cooling_desired_temp is not None:
-            # Use the midpoint of heating and cooling targets, or bias toward current mode
         if current_mode == "heat" and heating_desired_temp is not None:
             target_temp = heating_desired_temp
         elif current_mode == "cool" and cooling_desired_temp is not None:
@@ -362,8 +360,8 @@ class MiniSplitController:
         await self.set_last_event(self.last_drying_event_entity, now_str)
 
     async def enforce_idle_mode(
-          self,
-          current_mode: str = None,
+            self,
+            current_mode: str = None,
         ) -> None:
         """Enforce idle mode by resetting the set temperature."""
         # Determine last mode for reset
@@ -374,8 +372,8 @@ class MiniSplitController:
         await self.adjust_climate_setpoint(idle_temperature, mode=current_mode, message="enforcing idle mode")
 
     def climate_is_active(
-          self,
-          climate_setpoint: int = None,
+            self,
+            climate_setpoint: int = None,
         ) -> bool:
         """Check if the current temperature is either heating or cooling."""
         if climate_setpoint is None:
@@ -388,8 +386,8 @@ class MiniSplitController:
         return False
 
     def temperature_reached_threshold(self, 
-          external_temp: float = None,
-          current_mode: str = None,
+            external_temp: float = None,
+            current_mode: str = None,
         ) -> bool:
         
         if current_mode == "heat":
@@ -479,11 +477,11 @@ class MiniSplitController:
         )
 
     async def climate_has_manually_adjusted_setpoint(
-        self, 
-        allow_current_setpoint: bool = False,
-        current_set_point: float = None,
-        current_mode: str = None,
-       ) -> bool:
+            self, 
+            allow_current_setpoint: bool = False,
+            current_set_point: float = None,
+            current_mode: str = None,
+        ) -> bool:
         """Check if the set temperature is outside known numbers."""
         if current_mode == "heat":
             if current_set_point is self.heating_active_temp or current_set_point is self.heating_idle_temp:
