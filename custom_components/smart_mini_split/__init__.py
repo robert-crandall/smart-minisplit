@@ -145,6 +145,17 @@ class MiniSplitController:
             self.log_message(f"Invalid temperature sensor value: {sensor_state.state}", "warning")
             return None
 
+    def external_humidity(self) -> float | None:
+        sensor_state = self.hass.states.get(self.external_humidity_sensor)
+        if sensor_state is None:
+            self.log_message("Humidity sensor not available", "warning")
+            return None
+        try:
+            return float(sensor_state.state)
+        except (ValueError, TypeError):
+            self.log_message(f"Invalid humidity sensor value: {sensor_state.state}", "warning")
+            return None
+
     def heating_desired_temp(self) -> float | None:
         state_obj = self.hass.states.get(self.heating_desired_temp_input)
         if state_obj is None:
@@ -251,20 +262,21 @@ class MiniSplitController:
                     # Fallback if desired temps not available
                     self.log_message(f"Drying needed. Humidity={external_humidity}%", "debug")
                     return True
-                    
+        self.log_message(f"Drying not needed. Humidity={external_humidity}%", "debug")
         return False
+
     def current_mode(self) -> str | None:
-        """Return 'heat', 'cool', or None. Looks at the climate entity state."""
+        """Return 'heat', 'cool', 'dry', or None. Looks at the climate entity state."""
         climate_state = self.hass.states.get(self.climate_entity)
         if climate_state is None:
             self.log_message("Climate entity not available yet.", "warning")
             return None
         mode = climate_state.state
-        if mode == "heat" or mode == "cool":
+        if mode == "heat" or mode == "cool" or mode == "dry":
             return mode
-        self.log_message("Current mode not available yet. Returning None instead.", "warning")
+        self.log_message("Current mode not available yet. Returning Heat as default.", "warning")
         # Debug all available attributes to see what's available
-        return None
+        return "heat"
 
     def get_climate_setpoint(self) -> float | None:
         """Return the current set temperature from the climate entity."""
@@ -306,6 +318,48 @@ class MiniSplitController:
             await self.set_last_event(self.last_heating_event_entity, now_str)
         elif mode == "cool":
             await self.set_last_event(self.last_cooling_event_entity, now_str)
+
+    async def adjust_climate_dry(self, current_mode: str = None, message: str = None) -> None:        
+        # Determine target temperature based on what mode we should be in for comfort
+        heating_desired_temp = self.heating_desired_temp()
+        cooling_desired_temp = self.cooling_desired_temp()
+        
+        if heating_desired_temp is not None and cooling_desired_temp is not None:
+            # Use the midpoint of heating and cooling targets, or bias toward current mode
+        if current_mode == "heat" and heating_desired_temp is not None:
+            target_temp = heating_desired_temp
+        elif current_mode == "cool" and cooling_desired_temp is not None:
+            target_temp = cooling_desired_temp
+        elif cooling_desired_temp is not None:
+            # Default to midpoint or bias toward cooling (dry mode typically works better when slightly cool)
+            target_temp = cooling_desired_temp
+        else:
+            # Fallback - use current temperature as target
+            current_state = self.hass.states.get(self.climate_entity)
+            target_temp = current_state.attributes.get("current_temperature", 72)  # 72°F fallback
+        
+        service_data = {
+            "entity_id": self.climate_entity,
+            "hvac_mode": "dry",
+            "temperature": target_temp
+        }
+        
+        log_message = f"Adjusting to dry mode with temperature {target_temp}°F"
+        if message:
+            log_message += f", {message}"
+        
+        self.log_message(log_message, "info")
+        
+        await self.hass.services.async_call(
+            "climate",
+            "set_temperature",
+            service_data,
+            blocking=True,
+        )
+        
+        self.last_adjustment = datetime.now()
+        now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        await self.set_last_event(self.last_drying_event_entity, now_str)
 
     async def enforce_idle_mode(
           self,
@@ -350,9 +404,40 @@ class MiniSplitController:
                 self.log_message(f"Cooling has reached threshold. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
                 return True
 
+        if current_mode == "dry":
+            # Exit dry mode if temperature moves outside acceptable range
+            heating_desired_temp = self.heating_desired_temp()
+            cooling_desired_temp = self.cooling_desired_temp()
+            if heating_desired_temp is not None and cooling_desired_temp is not None:
+                temp_range_min = heating_desired_temp - self.humidity_temp_window
+                temp_range_max = cooling_desired_temp + self.humidity_temp_window
+                if external_temp < temp_range_min or external_temp > temp_range_max:
+                    self.log_message(f"Exiting dry mode: temperature outside range. Current={external_temp}, Range=({temp_range_min}, {temp_range_max})", "debug")
+                    return True  # Exit dry mode
+                else:
+                    self.log_message(f"Dry mode temperature within range. Current={external_temp}, Range=({temp_range_min}, {temp_range_max})", "debug")
+                    return False  # Stay in dry mode
+
         self.log_message(f"Temperature threshold not reached. Current={external_temp}, Heating setpoint={heating_desired_temp}, Cooling setpoint={cooling_desired_temp}, current_mode={current_mode}", "debug")
         return False
 
+    def humidity_threshold_reached(self, external_humidity: float) -> bool:
+        """Returns True if humidity is below the threshold (dry enough to stop drying)"""
+        if external_humidity is None:
+            self.log_message("Humidity data not available", "debug")
+            return False
+        
+        # Add some hysteresis to prevent rapid cycling
+        # Stop drying when humidity drops below threshold minus some buffer
+        humidity_stop_threshold = self.humidity_threshold - 3 # TODO - can make this a variable, humidity overshoot
+        
+        if external_humidity <= humidity_stop_threshold:
+            self.log_message(f"Humidity threshold reached. Current={external_humidity}%, Stop threshold={humidity_stop_threshold}%", "debug")
+            return True
+        else:
+            self.log_message(f"Humidity still above threshold. Current={external_humidity}%, Stop threshold={humidity_stop_threshold}%", "debug")
+            return False
+    
     async def update_desired_temp(self, setpoint: float, mode: str) -> None:
         if mode == "heat":
             entity_id = self.heating_desired_temp_input
@@ -437,6 +522,7 @@ class MiniSplitController:
             return
 
         external_temperature = self.external_temperature()
+        external_humidity = self.external_humidity()
         current_set_point = self.get_climate_setpoint()
         current_mode = self.current_mode()
 
@@ -471,6 +557,24 @@ class MiniSplitController:
         if self.needs_cooling(external_temperature):
             await self.adjust_climate_setpoint(self.cooling_active_temp, mode="cool")
             return
+
+        if self.needs_drying(external_temperature, external_humidity):
+            # If drying is needed, set the mode to dry
+            if current_mode != "dry":
+                await self.adjust_climate_dry(current_mode=current_mode)
+            return
+
+        if current_mode == "dry":
+            # If we are in dry mode, check if things have gotten too hot or cold
+            if self.temperature_reached_threshold(
+                external_temp=external_temperature,
+                current_mode=current_mode
+            ):
+                await self.enforce_idle_mode(current_mode="cool") # Likely in cooling mode after dry
+                return
+            if self.humidity_threshold_reached(external_humidity):
+                await self.enforce_idle_mode(current_mode="cool") # Likely in cooling mode after dry
+                return
 
     def log_message(self, message, level="info"):
         """Log message to Home Assistant logbook and logger, respecting configured log level."""
