@@ -15,11 +15,11 @@ except ImportError:
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "smart_mini_split"
-DEFAULT_WAIT_MINUTES = 5
-DEFAULT_HEATING_THRESHOLD = 1.0
-DEFAULT_HEATING_RESET_THRESHOLD = 1.0
-DEFAULT_COOLING_THRESHOLD = 1.0
-DEFAULT_COOLING_RESET_THRESHOLD = 1.0
+DEFAULT_WAIT_PERIOD_MINUTES = 5 # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
+DEFAULT_HEATING_THRESHOLD = 1.0 # Initiate heating when the actual temperature is this far below desired temperature
+DEFAULT_HEATING_OVERSHOOT = 1.5 # Stop heating when the actual temperature exceeds the desired temperature by this much
+DEFAULT_COOLING_THRESHOLD = 1.5 # Initiate cooling when the actual temperature is this far above desired temperature
+DEFAULT_COOLING_OVERSHOOT = 1.0 # Stop cooling when the actual temperature exceeds the desired temperature by this much
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
 DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
@@ -32,11 +32,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         _LOGGER.info("Smart Mini Split integration is disabled via configuration.")
         return True
     log_level = domain_config.get("log_level", DEFAULT_LOG_LEVEL)
-    wait_period_minutes = domain_config.get("wait_period_minutes", DEFAULT_WAIT_MINUTES)
+    wait_period_minutes = domain_config.get("wait_period_minutes", DEFAULT_WAIT_PERIOD_MINUTES)
     heating_threshold = domain_config.get("heating_threshold", DEFAULT_HEATING_THRESHOLD)
     cooling_threshold = domain_config.get("cooling_threshold", DEFAULT_COOLING_THRESHOLD)
-    heating_reset_threshold = domain_config.get("heating_reset_threshold", DEFAULT_HEATING_RESET_THRESHOLD)
-    cooling_reset_threshold = domain_config.get("cooling_reset_threshold", DEFAULT_COOLING_RESET_THRESHOLD)
+    heating_overshoot = domain_config.get("heating_overshoot", DEFAULT_HEATING_OVERSHOOT)
+    cooling_overshoot = domain_config.get("cooling_overshoot", DEFAULT_COOLING_OVERSHOOT)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
     external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
 
@@ -46,8 +46,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         wait_period_minutes=wait_period_minutes,
         heating_threshold=heating_threshold,
         cooling_threshold=cooling_threshold,
-        heating_reset_threshold=heating_reset_threshold,
-        cooling_reset_threshold=cooling_reset_threshold,
+        heating_overshoot=heating_overshoot,
+        cooling_overshoot=cooling_overshoot,
         climate_entity=climate_entity,
         external_temp_sensor=external_temp_sensor,
     )
@@ -63,7 +63,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_reset_threshold: float = DEFAULT_HEATING_RESET_THRESHOLD, cooling_reset_threshold: float = DEFAULT_COOLING_RESET_THRESHOLD, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_PERIOD_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_overshoot: float = DEFAULT_HEATING_OVERSHOOT, cooling_overshoot: float = DEFAULT_COOLING_OVERSHOOT, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -71,8 +71,8 @@ class MiniSplitController:
         self.wait_period_minutes = wait_period_minutes
         self.heating_threshold = heating_threshold
         self.cooling_threshold = cooling_threshold
-        self.heating_reset_threshold = heating_reset_threshold
-        self.cooling_reset_threshold = cooling_reset_threshold
+        self.heating_overshoot = heating_overshoot
+        self.cooling_overshoot = cooling_overshoot
         self.climate_entity = climate_entity
         self.external_temp_sensor = external_temp_sensor
 
@@ -285,13 +285,13 @@ class MiniSplitController:
         
         if current_mode == "heat":
             heating_desired_temp = self.heating_desired_temp()
-            if external_temp >= (heating_desired_temp + self.heating_reset_threshold):
+            if external_temp >= (heating_desired_temp + self.heating_overshoot):
                 self.log_message(f"Heating has reached threshold. Current={external_temp}, Desired={heating_desired_temp}", "debug")
                 return True
 
         if current_mode == "cool":
             cooling_desired_temp = self.cooling_desired_temp()
-            if external_temp <= (cooling_desired_temp - self.cooling_reset_threshold):
+            if external_temp <= (cooling_desired_temp - self.cooling_overshoot):
                 self.log_message(f"Cooling has reached threshold. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
                 return True
 
