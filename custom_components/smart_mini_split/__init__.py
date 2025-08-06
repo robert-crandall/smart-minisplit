@@ -20,9 +20,13 @@ DEFAULT_HEATING_THRESHOLD = 1.0 # Initiate heating when the actual temperature i
 DEFAULT_HEATING_OVERSHOOT = 1.5 # Stop heating when the actual temperature exceeds the desired temperature by this much
 DEFAULT_COOLING_THRESHOLD = 1.5 # Initiate cooling when the actual temperature is this far above desired temperature
 DEFAULT_COOLING_OVERSHOOT = 1.0 # Stop cooling when the actual temperature exceeds the desired temperature by this much
+DEFAULT_HUMIDITY_THRESHOLD = 60.0 # Start dehumidifying above this % RH
+DEFAULT_HUMIDITY_TEMP_WINDOW = 2.0 # Only run dehumidify if within ±this of target temp
+DEFAULT_HUMIDITY_PRIORITY = False # If true, dehumidify even if slightly outside temp range
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
 DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
+DEFAULT_EXTERNAL_HUMIDITY_SENSOR = "sensor.awair_element_110243_humidity"
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     # Read options from configuration, with defaults
@@ -37,8 +41,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     cooling_threshold = domain_config.get("cooling_threshold", DEFAULT_COOLING_THRESHOLD)
     heating_overshoot = domain_config.get("heating_overshoot", DEFAULT_HEATING_OVERSHOOT)
     cooling_overshoot = domain_config.get("cooling_overshoot", DEFAULT_COOLING_OVERSHOOT)
+    humidity_threshold = domain_config.get("humidity_threshold", DEFAULT_HUMIDITY_THRESHOLD)
+    humidity_temp_window = domain_config.get("humidity_temp_window", DEFAULT_HUMIDITY_TEMP_WINDOW)
+    humidity_priority = domain_config.get("humidity_priority", DEFAULT_HUMIDITY_PRIORITY)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
     external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
+    external_humidity_sensor = domain_config.get("external_humidity_sensor", DEFAULT_EXTERNAL_HUMIDITY_SENSOR)
 
     controller = MiniSplitController(
         hass,
@@ -48,8 +56,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         cooling_threshold=cooling_threshold,
         heating_overshoot=heating_overshoot,
         cooling_overshoot=cooling_overshoot,
+        humidity_threshold=humidity_threshold,
+        humidity_temp_window=humidity_temp_window,
+        humidity_priority=humidity_priority,
         climate_entity=climate_entity,
         external_temp_sensor=external_temp_sensor,
+        external_humidity_sensor=external_humidity_sensor,
     )
     async def run_update(now):
         await controller.update(now)
@@ -63,7 +75,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_PERIOD_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_overshoot: float = DEFAULT_HEATING_OVERSHOOT, cooling_overshoot: float = DEFAULT_COOLING_OVERSHOOT, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_PERIOD_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_overshoot: float = DEFAULT_HEATING_OVERSHOOT, cooling_overshoot: float = DEFAULT_COOLING_OVERSHOOT, humidity_threshold: float = DEFAULT_HUMIDITY_THRESHOLD, humidity_temp_window: float = DEFAULT_HUMIDITY_TEMP_WINDOW, humidity_priority: int = DEFAULT_HUMIDITY_PRIORITY, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR, external_humidity_sensor: str = DEFAULT_EXTERNAL_HUMIDITY_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -73,8 +85,12 @@ class MiniSplitController:
         self.cooling_threshold = cooling_threshold
         self.heating_overshoot = heating_overshoot
         self.cooling_overshoot = cooling_overshoot
+        self.humidity_threshold = humidity_threshold
+        self.humidity_temp_window = humidity_temp_window
+        self.humidity_priority = humidity_priority
         self.climate_entity = climate_entity
         self.external_temp_sensor = external_temp_sensor
+        self.external_humidity_sensor = external_humidity_sensor
 
         self.cooling_input_boolean = "input_boolean.cooling_enabled"
         self.cooling_desired_temp_input = "input_number.cooling_desired_temp"
@@ -198,6 +214,45 @@ class MiniSplitController:
             return True
         # self.log_message(f"Cooling is not needed. Current={current}, Desired={cooling_desired_temp}", "debug")
 
+    def needs_drying(self, external_temp: float, external_humidity: float) -> bool:
+        drying_allowed = self.hass.states.get(self.drying_input_boolean)
+        if drying_allowed.state == "on":
+            if external_temp is None or external_humidity is None:
+                return False
+                
+            # Wait period after heating or cooling events
+            last_heating_event = self.get_last_event(self.last_heating_event_entity)
+            last_cooling_event = self.get_last_event(self.last_cooling_event_entity)
+            
+            if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
+                self.log_message("Skipping drying: last heating event was less than 15 minutes ago", "debug")
+                return False
+                
+            if last_cooling_event and (datetime.now() - last_cooling_event) < timedelta(minutes=15):
+                self.log_message("Skipping drying: last cooling event was less than 15 minutes ago", "debug")
+                return False
+            
+            # Check if humidity is above threshold
+            if external_humidity > self.humidity_threshold:
+                # Optional: Only dry if temperature is within comfortable range
+                heating_desired_temp = self.heating_desired_temp()
+                cooling_desired_temp = self.cooling_desired_temp()
+                
+                if heating_desired_temp is not None and cooling_desired_temp is not None:
+                    temp_range_min = heating_desired_temp - self.humidity_temp_window
+                    temp_range_max = cooling_desired_temp + self.humidity_temp_window
+                    
+                    if temp_range_min <= external_temp <= temp_range_max:
+                        self.log_message(f"Drying needed. Humidity={external_humidity}%, Temp={external_temp}°F in acceptable range", "debug")
+                        return True
+                    else:
+                        self.log_message(f"Drying skipped: temp {external_temp}°F outside comfortable range ({temp_range_min}-{temp_range_max})", "debug")
+                else:
+                    # Fallback if desired temps not available
+                    self.log_message(f"Drying needed. Humidity={external_humidity}%", "debug")
+                    return True
+                    
+        return False
     def current_mode(self) -> str | None:
         """Return 'heat', 'cool', or None. Looks at the climate entity state."""
         climate_state = self.hass.states.get(self.climate_entity)
