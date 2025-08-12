@@ -171,13 +171,13 @@ class MiniSplitController:
             if external_temp is None or heating_desired_temp is None:
                 return False
             last_cooling_event = self.get_last_event(self.last_cooling_event_entity)
-            if last_cooling_event and (datetime.now() - last_cooling_event) < timedelta(minutes=15):
-                self.log_message("Skipping heating: last cooling event was less than 15 minutes ago", "debug")
-                return False
             if external_temp < (heating_desired_temp - self.heating_threshold):
+                if last_cooling_event and (datetime.now() - last_cooling_event) < timedelta(minutes=15):
+                    self.log_message("Heating needed, but skipped: last cooling event was less than 15 minutes ago", "debug")
+                    return False
                 self.log_message(f"Heating needed. Current={external_temp}, Desired={heating_desired_temp}", "info")
                 return True
-            self.log_message(f"Heating is not needed needed. Current={external_temp}, Desired={heating_desired_temp}", "debug")
+            self.log_message(f"Heating is not needed needed. Current={external_temp}, Desired={heating_desired_temp}", "verbose")
         return False
 
     def cooling_desired_temp(self) -> float | None:
@@ -198,7 +198,8 @@ class MiniSplitController:
 
     def cooling_idle_temp(self) -> float | None:
         """Return the idle temperature for cooling."""
-        return self.cooling_desired_temp()
+        return self.cooling_idle_temp_value
+
 
     def needs_cooling(self, external_temp: float) -> bool:
         cooling_allowed = self.hass.states.get(self.cooling_input_boolean)
@@ -207,20 +208,20 @@ class MiniSplitController:
         # Safety check
         heating_desired_temp = self.heating_desired_temp()
         cooling_desired_temp = self.cooling_desired_temp()
-        if not (heating_desired_temp + heating_overshoot) < cooling_desired_temp:
+        if not (heating_desired_temp + self.heating_overshoot) < cooling_desired_temp:
             self.log_message(f"Heating desired temp {heating_desired_temp} is too close to the cooling desired temp {cooling_desired_temp}. Set these more apart to avoid conflicts.", "warning")
             return False
             
         if external_temp is None or cooling_desired_temp is None:
             return False
         last_heating_event = self.get_last_event(self.last_heating_event_entity)
-        if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
-            self.log_message("Skipping cooling: last heating event was less than 15 minutes ago", "debug")
-            return False
         if external_temp > (cooling_desired_temp + self.cooling_threshold):
+            if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
+                self.log_message("Cooling needed but skipped: last heating event was less than 15 minutes ago", "debug")
+                return False
             self.log_message(f"Cooling needed. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
             return True
-        self.log_message(f"Cooling is not needed. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
+        self.log_message(f"Cooling is not needed. Current={external_temp}, Desired={cooling_desired_temp}", "verbose")
 
     def current_mode(self) -> str | None:
         """Return 'heat', 'cool', or None. Looks at the climate entity state."""
@@ -319,14 +320,15 @@ class MiniSplitController:
             if external_temp >= (heating_desired_temp + self.heating_overshoot):
                 self.log_message(f"Heating has reached threshold. Current={external_temp}, Desired={heating_desired_temp}", "debug")
                 return True
+            self.log_message(f"Temperature threshold not reached. Current={external_temp}, Heating setpoint={heating_desired_temp}", "debug")
+            return False
         else:
             cooling_desired_temp = self.cooling_desired_temp()
             if external_temp <= (cooling_desired_temp - self.cooling_overshoot):
                 self.log_message(f"Cooling has reached threshold. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
                 return True
-
-        self.log_message(f"Temperature threshold not reached. Current={external_temp}, Heating setpoint={heating_desired_temp}, Cooling setpoint={cooling_desired_temp}, current_mode={current_mode}", "debug")
-        return False
+            self.log_message(f"Temperature threshold not reached. Current={external_temp}, Cooling setpoint={cooling_desired_temp}", "debug")
+            return False
 
     async def update_desired_temp(self, setpoint: float, mode: str) -> None:
         if mode == "heat":
@@ -466,7 +468,9 @@ class MiniSplitController:
             # This is very noisy. Use it to confirm logs are working correctly.
             self.log_message(f"No action needed. Current temperature={external_temperature}", "verbose")
         except Exception as e:
-            self.log_message(f"Exception in update: {e}", "warning")
+            import traceback
+            tb = traceback.format_exc()
+            self.log_message(f"Exception in update: {e}\nTraceback:\n{tb}", "warning")
 
     def log_message(self, message, level="info"):
         """Log message to Home Assistant logbook and logger, respecting configured log level."""
@@ -483,6 +487,9 @@ class MiniSplitController:
                 )
             except Exception as e:
                 _LOGGER.debug(f"Failed to log to logbook: {e}")
+            return
+
+        if level == "verbose":
             return
 
         # Only log debug messages if log_level is 'debug'
