@@ -58,7 +58,6 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
             version=1,
             key=f"{DOMAIN}_{entry.entry_id}",
             encoder=self._encode_data,
-            decoder=self._decode_data,
         )
         
         super().__init__(
@@ -337,12 +336,14 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
         try:
             data = await self._store.async_load()
             if data is not None:
-                self._historical_data = data.get("historical_data", [])
-                self._learned_offset = data.get("learned_offset", self.config.default_cooling_offset)
-                self._offset_confidence = data.get("offset_confidence", 0.0)
+                # Decode the data manually since we can't use a custom decoder
+                decoded_data = self._decode_data(data)
+                self._historical_data = decoded_data.get("historical_data", [])
+                self._learned_offset = decoded_data.get("learned_offset", self.config.default_cooling_offset)
+                self._offset_confidence = decoded_data.get("offset_confidence", 0.0)
                 
                 # Parse last mode change timestamp
-                last_change_str = data.get("last_mode_change")
+                last_change_str = decoded_data.get("last_mode_change")
                 if last_change_str:
                     self._last_mode_change = datetime.fromisoformat(last_change_str)
                     
@@ -364,7 +365,9 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
                 "offset_confidence": self._offset_confidence,
                 "last_mode_change": self._last_mode_change.isoformat() if self._last_mode_change else None,
             }
-            await self._store.async_save(data)
+            # Encode the data before saving
+            encoded_data = self._encode_data(data)
+            await self._store.async_save(encoded_data)
             
         except Exception as err:
             _LOGGER.error("Error saving persistent data: %s", err)
@@ -418,10 +421,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
         self._manual_override = override
         _LOGGER.info("Manual override %s", "enabled" if override else "disabled")
 
-    @property
-    def config_entry(self) -> ConfigEntry:
-        """Return the config entry."""
-        return self.entry
+
 
     @property
     def historical_data(self) -> list[TemperatureDataPoint]:
