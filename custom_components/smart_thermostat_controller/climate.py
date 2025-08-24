@@ -593,7 +593,7 @@ class SmartThermostatClimate(CoordinatorEntity[SmartThermostatCoordinator], Clim
                     entity_id=minisplit_entity
                 )
             else:
-                # Set HVAC mode
+                # Use climate.set_temperature which can handle both mode and temperature in one atomic call
                 service_data = {
                     "entity_id": minisplit_entity,
                     "hvac_mode": mode,
@@ -605,28 +605,12 @@ class SmartThermostatClimate(CoordinatorEntity[SmartThermostatCoordinator], Clim
                 success = await safe_call_service(
                     self.hass,
                     "climate",
-                    "set_hvac_mode",
+                    "set_temperature",
                     service_data,
                     self._logger,
                     self._error_manager,
                     entity_id=minisplit_entity
                 )
-                
-                # Set temperature separately if specified and mode change was successful
-                if success and target_temp is not None:
-                    temp_success = await safe_call_service(
-                        self.hass,
-                        "climate",
-                        "set_temperature",
-                        {
-                            "entity_id": minisplit_entity,
-                            "temperature": target_temp,
-                        },
-                        self._logger,
-                        self._error_manager,
-                        entity_id=minisplit_entity
-                    )
-                    success = success and temp_success
             
             if success:
                 # Record mode change for cooldown tracking
