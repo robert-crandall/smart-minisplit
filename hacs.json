@@ -1,11 +1,6 @@
 {
   "name": "Smart Thermostat Controller",
   "content_in_root": false,
-  "domains": ["smart_thermostat_controller"],
-  "filename": "smart_thermostat_controller.zip",
   "country": ["US", "CA", "GB", "AU", "DE", "FR", "IT", "ES", "NL", "SE", "NO", "DK", "FI"],
-  "homeassistant": "2023.1.0",
-  "render_readme": true,
-  "zip_release": true,
-  "hide_default_branch": true
+  "homeassistant": "2023.1.0"
 }
