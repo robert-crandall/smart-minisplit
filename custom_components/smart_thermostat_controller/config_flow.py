@@ -19,6 +19,7 @@ from .const import (
     CONF_EXTERNAL_TEMP_SENSOR,
     CONF_HUMIDITY_MAX_THRESHOLD,
     CONF_HUMIDITY_MIN_THRESHOLD,
+    CONF_IDLE_TEMPERATURE_OFFSET,
     CONF_LEARNING_ENABLED,
     CONF_LEARNING_PERIOD_DAYS,
     CONF_MINISPLIT_ENTITY,
@@ -28,6 +29,7 @@ from .const import (
     DEFAULT_COOLING_OFFSET,
     DEFAULT_HUMIDITY_MAX_THRESHOLD,
     DEFAULT_HUMIDITY_MIN_THRESHOLD,
+    DEFAULT_IDLE_TEMPERATURE_OFFSET,
     DEFAULT_LEARNING_ENABLED,
     DEFAULT_LEARNING_PERIOD_DAYS,
     DEFAULT_TARGET_TEMPERATURE,
@@ -197,6 +199,10 @@ class SmartThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_DEFAULT_COOLING_OFFSET, 
                 default=DEFAULT_COOLING_OFFSET
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=15)),
+            vol.Required(
+                CONF_IDLE_TEMPERATURE_OFFSET, 
+                default=DEFAULT_IDLE_TEMPERATURE_OFFSET
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
         })
 
         return self.async_show_form(
@@ -390,6 +396,10 @@ class SmartThermostatOptionsFlow(config_entries.OptionsFlow):
                 CONF_DEFAULT_COOLING_OFFSET,
                 default=current_data.get(CONF_DEFAULT_COOLING_OFFSET, DEFAULT_COOLING_OFFSET)
             ): vol.All(vol.Coerce(float), vol.Range(min=0, max=15)),
+            vol.Required(
+                CONF_IDLE_TEMPERATURE_OFFSET,
+                default=current_data.get(CONF_IDLE_TEMPERATURE_OFFSET, DEFAULT_IDLE_TEMPERATURE_OFFSET)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
         })
 
         return self.async_show_form(

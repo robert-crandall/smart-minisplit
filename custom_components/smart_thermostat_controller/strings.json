@@ -34,7 +34,8 @@
           "cooldown_period": "Cooldown Period (seconds)",
           "learning_enabled": "Enable Offset Learning",
           "learning_period_days": "Learning Period (days)",
-          "default_cooling_offset": "Default Cooling Offset (°F)"
+          "default_cooling_offset": "Default Cooling Offset (°F)",
+          "idle_temperature_offset": "Idle Temperature Offset (°F)"
         }
       }
     },
@@ -72,7 +73,8 @@
           "cooldown_period": "Cooldown Period (seconds)",
           "learning_enabled": "Enable Offset Learning",
           "learning_period_days": "Learning Period (days)",
-          "default_cooling_offset": "Default Cooling Offset (°F)"
+          "default_cooling_offset": "Default Cooling Offset (°F)",
+          "idle_temperature_offset": "Idle Temperature Offset (°F)"
         }
       }
     },

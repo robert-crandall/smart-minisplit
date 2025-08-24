@@ -21,6 +21,7 @@ class SmartThermostatConfig:
     learning_enabled: bool
     learning_period_days: int
     default_cooling_offset: float
+    idle_temperature_offset: float
 
     @classmethod
     def from_config_entry(cls, config_data: dict[str, Any]) -> SmartThermostatConfig:
@@ -37,6 +38,7 @@ class SmartThermostatConfig:
             learning_enabled=config_data.get("learning_enabled", True),
             learning_period_days=config_data.get("learning_period_days", 7),
             default_cooling_offset=config_data.get("default_cooling_offset", 5.0),
+            idle_temperature_offset=config_data.get("idle_temperature_offset", 2.0),
         )
 
     def get_learning_config(self) -> LearningConfig:

@@ -18,6 +18,7 @@ CONF_COOLDOWN_PERIOD: Final = "cooldown_period"
 CONF_LEARNING_ENABLED: Final = "learning_enabled"
 CONF_LEARNING_PERIOD_DAYS: Final = "learning_period_days"
 CONF_DEFAULT_COOLING_OFFSET: Final = "default_cooling_offset"
+CONF_IDLE_TEMPERATURE_OFFSET: Final = "idle_temperature_offset"
 
 # Default values
 DEFAULT_TARGET_TEMPERATURE: Final = 72.0
@@ -28,6 +29,7 @@ DEFAULT_COOLDOWN_PERIOD: Final = 300  # 5 minutes in seconds
 DEFAULT_LEARNING_ENABLED: Final = True
 DEFAULT_LEARNING_PERIOD_DAYS: Final = 7
 DEFAULT_COOLING_OFFSET: Final = 5.0
+DEFAULT_IDLE_TEMPERATURE_OFFSET: Final = 2.0  # Temperature offset for idle state
 
 # Update intervals
 UPDATE_INTERVAL_SECONDS: Final = 30

@@ -63,7 +63,7 @@ class ControlManager:
         1. Heating if temperature is below target - deadband
         2. Cooling if temperature is above target + deadband
            - Use dry mode instead of cool if humidity > threshold
-        3. Off if within acceptable ranges
+        3. Idle state if within acceptable ranges (maintains unit operation for comfort and longevity)
         
         Args:
             sensor_readings: Current sensor readings
@@ -201,24 +201,57 @@ class ControlManager:
                         
                         return action
 
-            # Priority 3: Turn off if within acceptable ranges
-            action = ControlAction(
-                action_type=HVAC_MODE_OFF,
-                target_temperature=None,
-                reason="Temperature and humidity within acceptable ranges",
-                can_execute=can_execute,
-                cooldown_remaining=cooldown_remaining,
-            )
-            
-            self._logger.log_decision(
-                decision=action.action_type,
-                reasoning=f"Priority 3 - Within ranges: {action.reason}",
-                sensor_data={
-                    "temperature": sensor_readings.temperature,
-                    "humidity": sensor_readings.humidity
-                },
-                controller_state={"target": controller_state.target_temperature}
-            )
+            # Priority 3: Idle state if within acceptable ranges
+            # Instead of turning off, maintain operation at offset temperature for comfort and longevity
+            if (
+                sensor_readings.temperature_available
+                and sensor_readings.temperature is not None
+            ):
+                # Determine which idle mode based on current conditions and recent history
+                idle_mode, idle_target = self._calculate_idle_state(
+                    sensor_readings.temperature,
+                    controller_state.target_temperature,
+                    controller_state.learned_offset,
+                    controller_state.current_mode,
+                )
+                
+                action = ControlAction(
+                    action_type=idle_mode,
+                    target_temperature=idle_target,
+                    reason=f"Temperature within deadband - entering idle {idle_mode} mode at {idle_target:.1f}°F",
+                    can_execute=can_execute,
+                    cooldown_remaining=cooldown_remaining,
+                )
+                
+                self._logger.log_decision(
+                    decision=action.action_type,
+                    reasoning=f"Priority 3 - Idle state: {action.reason}",
+                    sensor_data={
+                        "temperature": sensor_readings.temperature,
+                        "current_mode": controller_state.current_mode
+                    },
+                    controller_state={
+                        "target": controller_state.target_temperature,
+                        "idle_target": idle_target,
+                        "idle_offset": self._config.idle_temperature_offset
+                    }
+                )
+            else:
+                # Fallback to off if no temperature sensor available
+                action = ControlAction(
+                    action_type=HVAC_MODE_OFF,
+                    target_temperature=None,
+                    reason="No temperature sensor available - turning off for safety",
+                    can_execute=can_execute,
+                    cooldown_remaining=cooldown_remaining,
+                )
+                
+                self._logger.log_decision(
+                    decision=action.action_type,
+                    reasoning=f"Priority 3 - Safety fallback: {action.reason}",
+                    sensor_data={"temperature_available": False},
+                    controller_state={"target": controller_state.target_temperature}
+                )
             
             # Log performance if slow
             duration_ms = (time.time() - start_time) * 1000
@@ -289,6 +322,76 @@ class ControlManager:
         
         # For heating mode, use target temperature as-is (assuming heating is accurate)
         return target_temperature
+
+    def _calculate_idle_state(
+        self,
+        current_temperature: float,
+        target_temperature: float,
+        learned_offset: float,
+        current_mode: str,
+    ) -> tuple[str, float]:
+        """
+        Calculate the appropriate idle state mode and temperature.
+        
+        The idle state keeps the unit running at a minimal level to:
+        - Maintain air circulation for comfort
+        - Reduce startup stress on equipment
+        - Provide faster response when conditions change
+        
+        Args:
+            current_temperature: Current room temperature
+            target_temperature: Desired target temperature
+            learned_offset: Learned offset for cooling mode
+            current_mode: Current operating mode
+            
+        Returns:
+            Tuple of (idle_mode, idle_target_temperature)
+        """
+        # Determine which direction we're closer to needing
+        # This helps decide whether to idle in cooling or heating mode
+        
+        # If current temperature is above target, lean toward cooling idle
+        if current_temperature >= target_temperature:
+            # Use cooling idle mode
+            # Set target to be (target - learned_offset + idle_offset)
+            # This keeps the unit running minimally in cooling mode
+            idle_target = target_temperature - learned_offset + self._config.idle_temperature_offset
+            idle_mode = HVAC_MODE_COOL
+            
+            _LOGGER.debug(
+                "Idle cooling: target %.1f°F - offset %.1f°F + idle_offset %.1f°F = %.1f°F",
+                target_temperature,
+                learned_offset,
+                self._config.idle_temperature_offset,
+                idle_target,
+            )
+            
+        else:
+            # Use heating idle mode
+            # Set target to be (target - idle_offset)
+            # This keeps the unit running minimally in heating mode
+            idle_target = target_temperature - self._config.idle_temperature_offset
+            idle_mode = HVAC_MODE_HEAT
+            
+            _LOGGER.debug(
+                "Idle heating: target %.1f°F - idle_offset %.1f°F = %.1f°F",
+                target_temperature,
+                self._config.idle_temperature_offset,
+                idle_target,
+            )
+        
+        # Prefer to continue in current mode if it makes sense for responsiveness
+        # This reduces mode switching when we're already in a good idle state
+        if current_mode == HVAC_MODE_COOL and current_temperature >= target_temperature - 0.5:
+            # Stay in cooling mode if we're close to or above target
+            idle_target = target_temperature - learned_offset + self._config.idle_temperature_offset
+            idle_mode = HVAC_MODE_COOL
+        elif current_mode == HVAC_MODE_HEAT and current_temperature <= target_temperature + 0.5:
+            # Stay in heating mode if we're close to or below target
+            idle_target = target_temperature - self._config.idle_temperature_offset
+            idle_mode = HVAC_MODE_HEAT
+        
+        return idle_mode, idle_target
 
     def can_change_mode(self, new_mode: str) -> bool:
         """
@@ -512,6 +615,7 @@ class ControlManager:
             old_cooldown = self._config.cooldown_period
             old_deadband = self._config.temperature_deadband
             old_humidity_max = self._config.humidity_max_threshold
+            old_idle_offset = self._config.idle_temperature_offset
             
             self._config = new_config
             
@@ -540,6 +644,14 @@ class ControlManager:
                     changed_by="config_update"
                 )
                 
+            if old_idle_offset != new_config.idle_temperature_offset:
+                self._logger.log_config_change(
+                    config_key="idle_temperature_offset",
+                    old_value=old_idle_offset,
+                    new_value=new_config.idle_temperature_offset,
+                    changed_by="config_update"
+                )
+                
         except Exception as err:
             self._logger.log_exception(
                 operation="update_config",
@@ -563,6 +675,7 @@ class ControlManager:
                 "cooldown_period": self._config.cooldown_period,
                 "temperature_deadband": self._config.temperature_deadband,
                 "humidity_max_threshold": self._config.humidity_max_threshold,
+                "idle_temperature_offset": self._config.idle_temperature_offset,
                 "error_summary": self._error_manager.get_error_summary() if hasattr(self, '_error_manager') else {},
             }
         except Exception as err:
