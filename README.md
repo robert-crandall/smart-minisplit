@@ -8,7 +8,10 @@ A Home Assistant custom integration that provides intelligent climate control fo
 - **Intelligent Mode Switching**: Automatically switches between heating, cooling, and dehumidifying based on conditions
 - **Learning Algorithm**: Learns and compensates for thermostat offset over time for improved accuracy
 - **Equipment Protection**: Implements cooldown periods to prevent rapid mode switching that could damage equipment
+- **Idle State Operation**: Maintains minimal operation instead of turning off for better comfort and equipment longevity
+- **Away Mode**: Energy-saving mode with configurable temperature bounds for unoccupied periods
 - **Manual Override**: Allows manual control when needed while maintaining monitoring and learning
+- **Automation Integration**: Full service support for Home Assistant automations and schedules
 - **Comprehensive Monitoring**: Provides detailed status sensors and logging for troubleshooting
 
 ## Installation
@@ -81,6 +84,184 @@ Before setting up the Smart Thermostat Controller, ensure you have:
 - **Cooldown Period**: Minimum time between mode changes (default: 300 seconds)
 - **Learning Enabled**: Enable automatic offset learning (default: true)
 - **Learning Period**: Days of data for offset calculation (default: 7 days)
+- **Idle Temperature Offset**: Temperature offset for idle state operation (default: 2.0°F)
+- **Away Mode Enabled**: Enable away mode functionality (default: false)
+- **Away Minimum Temperature**: Safety floor temperature when away (default: 65°F)
+- **Away Maximum Temperature**: Safety ceiling temperature when away (default: 78°F)
+
+## How It Works
+
+The Smart Thermostat Controller uses intelligent decision-making with priority-based operation:
+
+### Update Cycle
+- **Monitoring**: Checks temperature every 30 seconds
+- **Protection**: Enforces 5-minute cooldown between mode changes to protect equipment
+- **Learning**: Continuously learns from temperature differences to improve accuracy
+
+### Priority System
+The controller follows a specific priority order for optimal comfort:
+
+1. **Heat Priority**: If heating is needed, heat mode is activated
+2. **Cool/Dry Priority**: If cooling is needed:
+   - Uses dry mode when humidity > 60% for dehumidification
+   - Uses cool mode for standard cooling
+3. **Idle State**: When no heating or cooling is needed, enters idle state instead of turning off
+   - Maintains equipment readiness for faster response
+   - Configurable temperature offset (0.5-5.0°F) prevents unnecessary cycling
+
+### Away Mode Operation
+When away mode is enabled:
+- **Energy Savings**: Uses wider temperature ranges to reduce energy consumption
+- **Safety Protection**: Enforces minimum and maximum temperature bounds
+- **Comfort Recovery**: Returns to normal operation when away mode is disabled
+
+### Learning Algorithm
+- **Data Collection**: Tracks temperature differences over 7 days (configurable)
+- **Offset Calculation**: Automatically compensates for minisplit thermostat inaccuracies
+- **Continuous Improvement**: Adapts to seasonal changes and equipment characteristics
+
+## Automation Integration
+
+The Smart Thermostat Controller integrates seamlessly with Home Assistant automations through services and state monitoring.
+
+### Available Services
+
+#### Set Away Mode
+```yaml
+service: smart_thermostat_controller.set_away_mode
+data:
+  entity_id: climate.smart_thermostat_controller
+  away_mode: true  # or false
+```
+
+### Example Automations
+
+#### Schedule-Based Away Mode
+```yaml
+# Turn on away mode during work hours
+automation:
+  - alias: "Work Hours Away Mode"
+    trigger:
+      - platform: time
+        at: "08:00:00"
+    condition:
+      - condition: time
+        weekday:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+    action:
+      - service: smart_thermostat_controller.set_away_mode
+        data:
+          entity_id: climate.smart_thermostat_controller
+          away_mode: true
+
+  - alias: "Return Home"
+    trigger:
+      - platform: time
+        at: "17:30:00"
+    condition:
+      - condition: time
+        weekday:
+          - mon
+          - tue
+          - wed
+          - thu
+          - fri
+    action:
+      - service: smart_thermostat_controller.set_away_mode
+        data:
+          entity_id: climate.smart_thermostat_controller
+          away_mode: false
+```
+
+#### Presence-Based Control
+```yaml
+# Away mode based on household presence
+automation:
+  - alias: "Nobody Home"
+    trigger:
+      - platform: state
+        entity_id: group.family
+        to: 'not_home'
+        for: "00:15:00"  # 15 minute delay
+    action:
+      - service: smart_thermostat_controller.set_away_mode
+        data:
+          entity_id: climate.smart_thermostat_controller
+          away_mode: true
+
+  - alias: "Someone Home"
+    trigger:
+      - platform: state
+        entity_id: group.family
+        to: 'home'
+    action:
+      - service: smart_thermostat_controller.set_away_mode
+        data:
+          entity_id: climate.smart_thermostat_controller
+          away_mode: false
+```
+
+#### Sleep Schedule Integration
+```yaml
+# Adjust settings for sleep comfort
+automation:
+  - alias: "Bedtime Comfort"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: climate.set_temperature
+        data:
+          entity_id: climate.smart_thermostat_controller
+          temperature: 68
+      - service: climate.set_humidity
+        data:
+          entity_id: climate.smart_thermostat_controller
+          humidity: 50
+
+  - alias: "Morning Warmup"
+    trigger:
+      - platform: time
+        at: "06:30:00"
+    action:
+      - service: climate.set_temperature
+        data:
+          entity_id: climate.smart_thermostat_controller
+          temperature: 72
+```
+
+### Schedule Helper Integration
+You can also use Home Assistant's schedule helpers with the controller:
+
+```yaml
+# Create a schedule helper in configuration.yaml or UI
+schedule:
+  work_schedule:
+    name: "Work Schedule"
+    monday:
+      - from: "08:00:00"
+        to: "17:30:00"
+    tuesday:
+      - from: "08:00:00"
+        to: "17:30:00"
+    # ... continue for other days
+
+# Automation using the schedule
+automation:
+  - alias: "Away Mode Schedule"
+    trigger:
+      - platform: state
+        entity_id: schedule.work_schedule
+    action:
+      - service: smart_thermostat_controller.set_away_mode
+        data:
+          entity_id: climate.smart_thermostat_controller
+          away_mode: "{{ trigger.to_state.state == 'on' }}"
+```
 
 ## Usage
 
