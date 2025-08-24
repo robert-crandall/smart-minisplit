@@ -38,10 +38,14 @@ def default_config():
         humidity_max_threshold=60.0,
         humidity_min_threshold=40.0,
         temperature_deadband=1.0,
-        cooldown_period=300,  # 5 minutes
+        cooldown_period=900,  # 15 minutes
         learning_enabled=True,
         learning_period_days=7,
         default_cooling_offset=5.0,
+        idle_temperature_offset=2.0,
+        away_mode_enabled=False,
+        away_min_temperature=65.0,
+        away_max_temperature=78.0,
     )
 
 
@@ -116,11 +120,11 @@ class TestControlManager:
     def test_calculate_required_action_humidity_priority(
         self, control_manager, default_controller_state, valid_sensor_readings
     ):
-        """Test that humidity control takes priority over temperature."""
-        # Set humidity above threshold
+        """Test that heating takes priority over humidity control."""
+        # Set humidity above threshold but temperature needs heating
         high_humidity_readings = SensorReadings(
-            temperature=70.0,  # Below target, would normally heat
-            humidity=65.0,     # Above threshold, should trigger dry mode
+            temperature=70.0,  # Below target, needs heat (Priority 1)
+            humidity=65.0,     # Above threshold, but heat takes priority
             timestamp=dt_util.utcnow(),
             temperature_available=True,
             humidity_available=True,
@@ -130,9 +134,33 @@ class TestControlManager:
             high_humidity_readings, default_controller_state
         )
         
-        assert action.action_type == HVAC_MODE_DRY
+        # Heat should take priority over dry mode
+        assert action.action_type == HVAC_MODE_HEAT
         assert action.target_temperature == default_controller_state.target_temperature
-        assert "Humidity 65.0% > 60.0%" in action.reason
+        assert "Temperature 70.0°F < normal heating target" in action.reason
+
+    def test_calculate_required_action_dry_mode_priority(
+        self, control_manager, default_controller_state, valid_sensor_readings
+    ):
+        """Test that dry mode is used when cooling is needed and humidity is high."""
+        # Set temperature needing cooling and humidity above threshold
+        hot_humid_readings = SensorReadings(
+            temperature=74.0,  # Above target, needs cooling (Priority 2)
+            humidity=65.0,     # Above threshold, should use dry instead of cool
+            timestamp=dt_util.utcnow(),
+            temperature_available=True,
+            humidity_available=True,
+        )
+        
+        action = control_manager.calculate_required_action(
+            hot_humid_readings, default_controller_state
+        )
+        
+        # Should use dry mode instead of cool when humidity > 60%
+        assert action.action_type == HVAC_MODE_DRY
+        # Dry mode doesn't apply cooling offset, uses target temperature
+        assert action.target_temperature == 72.0
+        assert "humidity 65.0% > 60.0%" in action.reason
 
     def test_calculate_required_action_cooling_needed(
         self, control_manager, default_controller_state, valid_sensor_readings
@@ -154,7 +182,7 @@ class TestControlManager:
         assert action.action_type == HVAC_MODE_COOL
         # Should apply learned offset: 72 - 5 = 67
         assert action.target_temperature == 67.0
-        assert "Temperature 74.0°F > target 72.0°F + deadband 1.0°F" in action.reason
+        assert "Temperature 74.0°F > normal cooling target" in action.reason
 
     def test_calculate_required_action_heating_needed(
         self, control_manager, default_controller_state, valid_sensor_readings
@@ -176,12 +204,12 @@ class TestControlManager:
         assert action.action_type == HVAC_MODE_HEAT
         # No offset applied for heating
         assert action.target_temperature == 72.0
-        assert "Temperature 70.0°F < target 72.0°F - deadband 1.0°F" in action.reason
+        assert "Temperature 70.0°F < normal heating target" in action.reason
 
     def test_calculate_required_action_within_deadband(
         self, control_manager, default_controller_state, valid_sensor_readings
     ):
-        """Test that system turns off when temperature is within deadband."""
+        """Test that system enters idle mode when temperature is within deadband."""
         # Temperature within deadband (72 ± 1)
         comfortable_readings = SensorReadings(
             temperature=72.5,  # Within deadband
@@ -195,9 +223,11 @@ class TestControlManager:
             comfortable_readings, default_controller_state
         )
         
-        assert action.action_type == HVAC_MODE_OFF
-        assert action.target_temperature is None
-        assert "within acceptable ranges" in action.reason
+        # Should enter idle cool mode instead of turning off
+        assert action.action_type == HVAC_MODE_COOL  # Idle cool mode
+        # Idle cooling: 72 - 5 + 2 = 69
+        assert action.target_temperature == 69.0
+        assert "Temperature within deadband - entering idle cool mode" in action.reason
 
     def test_apply_learned_offset_cooling(self, control_manager):
         """Test learned offset application for cooling mode."""
@@ -228,8 +258,8 @@ class TestControlManager:
 
     def test_can_change_mode_after_cooldown(self, control_manager):
         """Test mode change allowed after cooldown period."""
-        # Record an old mode change
-        control_manager._last_mode_change = dt_util.utcnow() - timedelta(seconds=400)
+        # Record an old mode change (after 15-minute cooldown)
+        control_manager._last_mode_change = dt_util.utcnow() - timedelta(seconds=1000)
         control_manager._current_mode = HVAC_MODE_COOL
         
         assert control_manager.can_change_mode(HVAC_MODE_HEAT) is True
@@ -263,11 +293,11 @@ class TestControlManager:
         control_manager._last_mode_change = dt_util.utcnow() - timedelta(seconds=60)
         remaining = control_manager.get_remaining_cooldown()
         
-        assert 230 <= remaining <= 240  # Should be around 240 seconds remaining
+        assert 830 <= remaining <= 840  # Should be around 840 seconds remaining (900 - 60)
 
     def test_get_remaining_cooldown_after_period(self, control_manager):
         """Test cooldown calculation after cooldown period."""
-        control_manager._last_mode_change = dt_util.utcnow() - timedelta(seconds=400)
+        control_manager._last_mode_change = dt_util.utcnow() - timedelta(seconds=1000)
         assert control_manager.get_remaining_cooldown() == 0
 
     def test_validate_sensor_readings_valid(self, control_manager, valid_sensor_readings):
@@ -373,8 +403,9 @@ class TestControlManagerEdgeCases:
             temp_unavailable_readings, default_controller_state
         )
         
-        # Should still activate dry mode based on humidity
-        assert action.action_type == HVAC_MODE_DRY
+        # Should turn off for safety when temperature sensor unavailable
+        assert action.action_type == HVAC_MODE_OFF
+        assert "No temperature sensor available" in action.reason
 
     def test_humidity_sensor_unavailable(
         self, control_manager, default_controller_state

@@ -39,10 +39,14 @@ def mock_coordinator():
         humidity_max_threshold=60.0,
         humidity_min_threshold=40.0,
         temperature_deadband=1.0,
-        cooldown_period=300,
+        cooldown_period=900,
         learning_enabled=True,
         learning_period_days=7,
         default_cooling_offset=5.0,
+        idle_temperature_offset=2.0,
+        away_mode_enabled=False,
+        away_min_temperature=65.0,
+        away_max_temperature=78.0,
     )
     coordinator.last_update_success = True
     coordinator.historical_data = []
@@ -62,6 +66,7 @@ def mock_controller_state():
         offset_confidence=0.8,
         manual_override=False,
         cooldown_remaining=120,
+        away_mode=False,
         is_available=True,
     )
 
@@ -214,12 +219,12 @@ class TestSmartThermostatSensor:
         mock_coordinator.data = mock_controller_state
         description = next(desc for desc in SENSOR_DESCRIPTIONS if desc.key == "cooldown_remaining")
         sensor = SmartThermostatSensor(mock_coordinator, description)
-        
+
         assert sensor.native_value == 120
-        
+
         # Test attributes
         attrs = sensor.extra_state_attributes
-        assert attrs["cooldown_period"] == 300
+        assert attrs["cooldown_period"] == 900
         assert attrs["can_change_mode"] is False
 
     def test_manual_override_sensor(self, mock_coordinator, mock_controller_state):

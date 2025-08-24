@@ -81,7 +81,7 @@ Before setting up the Smart Thermostat Controller, ensure you have:
 - **Minimum Humidity**: Lower humidity threshold (default: 40%)
 
 #### Step 4: Advanced Settings
-- **Cooldown Period**: Minimum time between mode changes (default: 300 seconds)
+- **Cooldown Period**: Minimum time between mode changes (default: 900 seconds)
 - **Learning Enabled**: Enable automatic offset learning (default: true)
 - **Learning Period**: Days of data for offset calculation (default: 7 days)
 - **Idle Temperature Offset**: Temperature offset for idle state operation (default: 2.0°F)
@@ -95,7 +95,7 @@ The Smart Thermostat Controller uses intelligent decision-making with priority-b
 
 ### Update Cycle
 - **Monitoring**: Checks temperature every 30 seconds
-- **Protection**: Enforces 5-minute cooldown between mode changes to protect equipment
+- **Protection**: Enforces 15-minute cooldown between mode changes to protect equipment
 - **Learning**: Continuously learns from temperature differences to improve accuracy
 
 ### Priority System

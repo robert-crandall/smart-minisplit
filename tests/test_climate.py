@@ -45,10 +45,14 @@ def mock_config():
         humidity_max_threshold=60.0,
         humidity_min_threshold=40.0,
         temperature_deadband=1.0,
-        cooldown_period=300,
+        cooldown_period=900,
         learning_enabled=True,
         learning_period_days=7,
         default_cooling_offset=5.0,
+        idle_temperature_offset=2.0,
+        away_mode_enabled=False,
+        away_min_temperature=65.0,
+        away_max_temperature=78.0,
     )
 
 

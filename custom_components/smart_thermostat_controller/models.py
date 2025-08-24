@@ -37,7 +37,7 @@ class SmartThermostatConfig:
             humidity_max_threshold=config_data.get("humidity_max_threshold", 60.0),
             humidity_min_threshold=config_data.get("humidity_min_threshold", 40.0),
             temperature_deadband=config_data.get("temperature_deadband", 1.0),
-            cooldown_period=config_data.get("cooldown_period", 300),
+            cooldown_period=config_data.get("cooldown_period", 900),
             learning_enabled=config_data.get("learning_enabled", True),
             learning_period_days=config_data.get("learning_period_days", 7),
             default_cooling_offset=config_data.get("default_cooling_offset", 5.0),

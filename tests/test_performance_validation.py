@@ -82,6 +82,7 @@ class TestDataUpdateFrequencyPerformance:
             from custom_components.smart_thermostat_controller.error_handling import ErrorRecoveryManager
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
+            coordinator._away_mode = False
             
             # Performance test: 100 rapid updates
             start_time = time.time()
@@ -253,7 +254,8 @@ class TestDataUpdateFrequencyPerformance:
             from custom_components.smart_thermostat_controller.error_handling import ErrorRecoveryManager
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
-            
+            coordinator._away_mode = False
+
             # Define concurrent operations
             async def update_operation():
                 return await coordinator._async_update_data()
@@ -450,7 +452,8 @@ class TestMemoryUsageValidation:
             from custom_components.smart_thermostat_controller.error_handling import ErrorRecoveryManager
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
-            
+            coordinator._away_mode = False
+
             process = psutil.Process(os.getpid())
             initial_memory = process.memory_info().rss / 1024 / 1024
             initial_cpu_percent = process.cpu_percent()
