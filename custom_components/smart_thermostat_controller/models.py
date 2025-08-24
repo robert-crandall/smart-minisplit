@@ -22,6 +22,9 @@ class SmartThermostatConfig:
     learning_period_days: int
     default_cooling_offset: float
     idle_temperature_offset: float
+    away_mode_enabled: bool
+    away_min_temperature: float
+    away_max_temperature: float
 
     @classmethod
     def from_config_entry(cls, config_data: dict[str, Any]) -> SmartThermostatConfig:
@@ -39,6 +42,9 @@ class SmartThermostatConfig:
             learning_period_days=config_data.get("learning_period_days", 7),
             default_cooling_offset=config_data.get("default_cooling_offset", 5.0),
             idle_temperature_offset=config_data.get("idle_temperature_offset", 2.0),
+            away_mode_enabled=config_data.get("away_mode_enabled", False),
+            away_min_temperature=config_data.get("away_min_temperature", 65.0),
+            away_max_temperature=config_data.get("away_max_temperature", 78.0),
         )
 
     def get_learning_config(self) -> LearningConfig:
@@ -65,6 +71,7 @@ class ControllerState:
     offset_confidence: float
     manual_override: bool
     cooldown_remaining: int
+    away_mode: bool = False
     is_available: bool = True
 
     def __post_init__(self) -> None:

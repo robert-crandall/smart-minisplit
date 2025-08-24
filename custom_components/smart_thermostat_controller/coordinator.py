@@ -47,6 +47,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
         self._offset_confidence = 0.0
         self._last_mode_change: datetime | None = None
         self._manual_override = False
+        self._away_mode = False
         
         # Initialize logging and error handling
         self._logger = create_logger(hass, "coordinator")
@@ -132,6 +133,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
                 offset_confidence=self._offset_confidence,
                 manual_override=self._manual_override,
                 cooldown_remaining=self._calculate_cooldown_remaining(),
+                away_mode=self._away_mode,
                 is_available=sensor_readings.temperature_available,
             )
             
@@ -341,6 +343,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
                 self._historical_data = decoded_data.get("historical_data", [])
                 self._learned_offset = decoded_data.get("learned_offset", self.config.default_cooling_offset)
                 self._offset_confidence = decoded_data.get("offset_confidence", 0.0)
+                self._away_mode = decoded_data.get("away_mode", False)
                 
                 # Parse last mode change timestamp
                 last_change_str = decoded_data.get("last_mode_change")
@@ -355,6 +358,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
             self._historical_data = []
             self._learned_offset = self.config.default_cooling_offset
             self._offset_confidence = 0.0
+            self._away_mode = False
 
     async def _save_persistent_data(self) -> None:
         """Save persistent data to storage."""
@@ -364,6 +368,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
                 "learned_offset": self._learned_offset,
                 "offset_confidence": self._offset_confidence,
                 "last_mode_change": self._last_mode_change.isoformat() if self._last_mode_change else None,
+                "away_mode": self._away_mode,
             }
             # Encode the data before saving
             encoded_data = self._encode_data(data)
@@ -420,6 +425,19 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
         """Set manual override status."""
         self._manual_override = override
         _LOGGER.info("Manual override %s", "enabled" if override else "disabled")
+
+    def set_away_mode(self, away: bool) -> None:
+        """Set away mode status."""
+        if self._away_mode != away:
+            old_mode = self._away_mode
+            self._away_mode = away
+            self._logger.log_config_change(
+                config_key="away_mode",
+                old_value=old_mode,
+                new_value=away,
+                changed_by="user"
+            )
+            _LOGGER.info("Away mode %s", "enabled" if away else "disabled")
 
 
 

@@ -60,8 +60,8 @@ class ControlManager:
         Calculate the required control action based on sensor readings and state.
         
         Priority order:
-        1. Heating if temperature is below target - deadband
-        2. Cooling if temperature is above target + deadband
+        1. Heating if temperature is below target/away minimum - deadband
+        2. Cooling if temperature is above target/away maximum + deadband
            - Use dry mode instead of cool if humidity > threshold
         3. Idle state if within acceptable ranges (maintains unit operation for comfort and longevity)
         
@@ -102,37 +102,42 @@ class ControlManager:
             cooldown_remaining = self._get_cooldown_remaining()
             can_execute = cooldown_remaining == 0
 
+            # Determine effective temperature targets based on away mode
+            heating_target, cooling_target = self._get_effective_temperature_targets(controller_state)
+
             # Priority 1: Heating if needed
             if (
                 sensor_readings.temperature_available
                 and sensor_readings.temperature is not None
             ):
-                temp_diff = sensor_readings.temperature - controller_state.target_temperature
+                temp_diff_heating = sensor_readings.temperature - heating_target
                 
-                if temp_diff < -self._config.temperature_deadband:
+                if temp_diff_heating < -self._config.temperature_deadband:
                     # Apply learned offset to target temperature for minisplit
                     adjusted_target = self._apply_learned_offset(
-                        controller_state.target_temperature,
+                        heating_target,
                         controller_state.learned_offset,
                         HVAC_MODE_HEAT,
                     )
                     
+                    reason_mode = "away" if controller_state.away_mode else "normal"
                     action = ControlAction(
                         action_type=HVAC_MODE_HEAT,
                         target_temperature=adjusted_target,
-                        reason=f"Temperature {sensor_readings.temperature:.1f}°F < target {controller_state.target_temperature:.1f}°F - deadband {self._config.temperature_deadband:.1f}°F",
+                        reason=f"Temperature {sensor_readings.temperature:.1f}°F < {reason_mode} heating target {heating_target:.1f}°F - deadband {self._config.temperature_deadband:.1f}°F",
                         can_execute=can_execute,
                         cooldown_remaining=cooldown_remaining,
                     )
                     
                     self._logger.log_decision(
                         decision=action.action_type,
-                        reasoning=f"Priority 1 - Heating needed: {action.reason}",
-                        sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff},
+                        reasoning=f"Priority 1 - Heating needed ({reason_mode} mode): {action.reason}",
+                        sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff_heating},
                         controller_state={
-                            "target": controller_state.target_temperature,
+                            "heating_target": heating_target,
                             "adjusted_target": adjusted_target,
-                            "deadband": self._config.temperature_deadband
+                            "deadband": self._config.temperature_deadband,
+                            "away_mode": controller_state.away_mode
                         }
                     )
                     
@@ -143,31 +148,33 @@ class ControlManager:
                 sensor_readings.temperature_available
                 and sensor_readings.temperature is not None
             ):
-                temp_diff = sensor_readings.temperature - controller_state.target_temperature
+                temp_diff_cooling = sensor_readings.temperature - cooling_target
                 
-                if temp_diff > self._config.temperature_deadband:
+                if temp_diff_cooling > self._config.temperature_deadband:
                     # Check if humidity is high - use dry mode instead of cool
                     if (
                         sensor_readings.humidity_available
                         and sensor_readings.humidity is not None
                         and sensor_readings.humidity > self._config.humidity_max_threshold
                     ):
+                        reason_mode = "away" if controller_state.away_mode else "normal"
                         action = ControlAction(
                             action_type=HVAC_MODE_DRY,
-                            target_temperature=controller_state.target_temperature,
-                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > target + deadband AND humidity {sensor_readings.humidity:.1f}% > {self._config.humidity_max_threshold:.1f}%",
+                            target_temperature=cooling_target,
+                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > {reason_mode} cooling target + deadband AND humidity {sensor_readings.humidity:.1f}% > {self._config.humidity_max_threshold:.1f}%",
                             can_execute=can_execute,
                             cooldown_remaining=cooldown_remaining,
                         )
                         
                         self._logger.log_decision(
                             decision=action.action_type,
-                            reasoning=f"Priority 2 - Cooling needed with high humidity, using dry mode: {action.reason}",
-                            sensor_data={"temperature": sensor_readings.temperature, "humidity": sensor_readings.humidity, "temp_diff": temp_diff},
+                            reasoning=f"Priority 2 - Cooling needed with high humidity ({reason_mode} mode), using dry mode: {action.reason}",
+                            sensor_data={"temperature": sensor_readings.temperature, "humidity": sensor_readings.humidity, "temp_diff": temp_diff_cooling},
                             controller_state={
-                                "target": controller_state.target_temperature,
+                                "cooling_target": cooling_target,
                                 "humidity_threshold": self._config.humidity_max_threshold,
-                                "deadband": self._config.temperature_deadband
+                                "deadband": self._config.temperature_deadband,
+                                "away_mode": controller_state.away_mode
                             }
                         )
                         
@@ -175,27 +182,29 @@ class ControlManager:
                     else:
                         # Normal cooling - humidity is acceptable or not available
                         adjusted_target = self._apply_learned_offset(
-                            controller_state.target_temperature,
+                            cooling_target,
                             controller_state.learned_offset,
                             HVAC_MODE_COOL,
                         )
                         
+                        reason_mode = "away" if controller_state.away_mode else "normal"
                         action = ControlAction(
                             action_type=HVAC_MODE_COOL,
                             target_temperature=adjusted_target,
-                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > target {controller_state.target_temperature:.1f}°F + deadband {self._config.temperature_deadband:.1f}°F",
+                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > {reason_mode} cooling target {cooling_target:.1f}°F + deadband {self._config.temperature_deadband:.1f}°F",
                             can_execute=can_execute,
                             cooldown_remaining=cooldown_remaining,
                         )
                         
                         self._logger.log_decision(
                             decision=action.action_type,
-                            reasoning=f"Priority 2 - Cooling needed: {action.reason}",
-                            sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff},
+                            reasoning=f"Priority 2 - Cooling needed ({reason_mode} mode): {action.reason}",
+                            sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff_cooling},
                             controller_state={
-                                "target": controller_state.target_temperature,
+                                "cooling_target": cooling_target,
                                 "adjusted_target": adjusted_target,
-                                "deadband": self._config.temperature_deadband
+                                "deadband": self._config.temperature_deadband,
+                                "away_mode": controller_state.away_mode
                             }
                         )
                         
@@ -208,32 +217,40 @@ class ControlManager:
                 and sensor_readings.temperature is not None
             ):
                 # Determine which idle mode based on current conditions and recent history
+                # Use the midpoint between heating and cooling targets for idle decisions
+                heating_target, cooling_target = self._get_effective_temperature_targets(controller_state)
+                effective_target = (heating_target + cooling_target) / 2
+                
                 idle_mode, idle_target = self._calculate_idle_state(
                     sensor_readings.temperature,
-                    controller_state.target_temperature,
+                    effective_target,
                     controller_state.learned_offset,
                     controller_state.current_mode,
                 )
                 
+                reason_mode = "away" if controller_state.away_mode else "normal"
                 action = ControlAction(
                     action_type=idle_mode,
                     target_temperature=idle_target,
-                    reason=f"Temperature within deadband - entering idle {idle_mode} mode at {idle_target:.1f}°F",
+                    reason=f"Temperature within deadband - entering idle {idle_mode} mode at {idle_target:.1f}°F ({reason_mode} mode)",
                     can_execute=can_execute,
                     cooldown_remaining=cooldown_remaining,
                 )
                 
                 self._logger.log_decision(
                     decision=action.action_type,
-                    reasoning=f"Priority 3 - Idle state: {action.reason}",
+                    reasoning=f"Priority 3 - Idle state ({reason_mode} mode): {action.reason}",
                     sensor_data={
                         "temperature": sensor_readings.temperature,
                         "current_mode": controller_state.current_mode
                     },
                     controller_state={
-                        "target": controller_state.target_temperature,
+                        "effective_target": effective_target,
+                        "heating_target": heating_target,
+                        "cooling_target": cooling_target,
                         "idle_target": idle_target,
-                        "idle_offset": self._config.idle_temperature_offset
+                        "idle_offset": self._config.idle_temperature_offset,
+                        "away_mode": controller_state.away_mode
                     }
                 )
             else:
@@ -250,7 +267,7 @@ class ControlManager:
                     decision=action.action_type,
                     reasoning=f"Priority 3 - Safety fallback: {action.reason}",
                     sensor_data={"temperature_available": False},
-                    controller_state={"target": controller_state.target_temperature}
+                    controller_state={"away_mode": controller_state.away_mode}
                 )
             
             # Log performance if slow
@@ -392,6 +409,42 @@ class ControlManager:
             idle_mode = HVAC_MODE_HEAT
         
         return idle_mode, idle_target
+
+    def _get_effective_temperature_targets(
+        self,
+        controller_state: ControllerState,
+    ) -> tuple[float, float]:
+        """
+        Get the effective heating and cooling targets based on away mode.
+        
+        Args:
+            controller_state: Current controller state
+            
+        Returns:
+            Tuple of (heating_target, cooling_target)
+        """
+        if controller_state.away_mode and self._config.away_mode_enabled:
+            # Use away mode temperature bounds
+            heating_target = self._config.away_min_temperature
+            cooling_target = self._config.away_max_temperature
+            
+            _LOGGER.debug(
+                "Using away mode targets: heating %.1f°F, cooling %.1f°F",
+                heating_target,
+                cooling_target,
+            )
+        else:
+            # Use normal target temperature for both heating and cooling
+            heating_target = controller_state.target_temperature
+            cooling_target = controller_state.target_temperature
+            
+            _LOGGER.debug(
+                "Using normal targets: heating %.1f°F, cooling %.1f°F",
+                heating_target,
+                cooling_target,
+            )
+        
+        return heating_target, cooling_target
 
     def can_change_mode(self, new_mode: str) -> bool:
         """

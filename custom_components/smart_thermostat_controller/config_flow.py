@@ -13,6 +13,9 @@ from homeassistant.helpers import selector
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 
 from .const import (
+    CONF_AWAY_MAX_TEMPERATURE,
+    CONF_AWAY_MIN_TEMPERATURE,
+    CONF_AWAY_MODE_ENABLED,
     CONF_COOLDOWN_PERIOD,
     CONF_DEFAULT_COOLING_OFFSET,
     CONF_EXTERNAL_HUMIDITY_SENSOR,
@@ -25,6 +28,9 @@ from .const import (
     CONF_MINISPLIT_ENTITY,
     CONF_TARGET_TEMPERATURE,
     CONF_TEMPERATURE_DEADBAND,
+    DEFAULT_AWAY_MAX_TEMPERATURE,
+    DEFAULT_AWAY_MIN_TEMPERATURE,
+    DEFAULT_AWAY_MODE_ENABLED,
     DEFAULT_COOLDOWN_PERIOD,
     DEFAULT_COOLING_OFFSET,
     DEFAULT_HUMIDITY_MAX_THRESHOLD,
@@ -203,6 +209,18 @@ class SmartThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_IDLE_TEMPERATURE_OFFSET, 
                 default=DEFAULT_IDLE_TEMPERATURE_OFFSET
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            vol.Required(
+                CONF_AWAY_MODE_ENABLED, 
+                default=DEFAULT_AWAY_MODE_ENABLED
+            ): bool,
+            vol.Required(
+                CONF_AWAY_MIN_TEMPERATURE, 
+                default=DEFAULT_AWAY_MIN_TEMPERATURE
+            ): vol.All(vol.Coerce(float), vol.Range(min=50, max=85)),
+            vol.Required(
+                CONF_AWAY_MAX_TEMPERATURE, 
+                default=DEFAULT_AWAY_MAX_TEMPERATURE
+            ): vol.All(vol.Coerce(float), vol.Range(min=60, max=95)),
         })
 
         return self.async_show_form(
@@ -295,8 +313,17 @@ class SmartThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Validate advanced step input."""
         errors: dict[str, str] = {}
 
-        # All validation is handled by voluptuous schema
-        # Additional custom validation can be added here if needed
+        # Validate away mode temperature ranges
+        if (
+            user_input.get(CONF_AWAY_MODE_ENABLED, False) and
+            CONF_AWAY_MIN_TEMPERATURE in user_input and
+            CONF_AWAY_MAX_TEMPERATURE in user_input
+        ):
+            away_min = user_input[CONF_AWAY_MIN_TEMPERATURE]
+            away_max = user_input[CONF_AWAY_MAX_TEMPERATURE]
+            
+            if away_max <= away_min:
+                errors["away_max_temperature"] = "away_max_must_be_greater_than_min"
 
         return errors
 
@@ -400,6 +427,18 @@ class SmartThermostatOptionsFlow(config_entries.OptionsFlow):
                 CONF_IDLE_TEMPERATURE_OFFSET,
                 default=current_data.get(CONF_IDLE_TEMPERATURE_OFFSET, DEFAULT_IDLE_TEMPERATURE_OFFSET)
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            vol.Required(
+                CONF_AWAY_MODE_ENABLED,
+                default=current_data.get(CONF_AWAY_MODE_ENABLED, DEFAULT_AWAY_MODE_ENABLED)
+            ): bool,
+            vol.Required(
+                CONF_AWAY_MIN_TEMPERATURE,
+                default=current_data.get(CONF_AWAY_MIN_TEMPERATURE, DEFAULT_AWAY_MIN_TEMPERATURE)
+            ): vol.All(vol.Coerce(float), vol.Range(min=50, max=85)),
+            vol.Required(
+                CONF_AWAY_MAX_TEMPERATURE,
+                default=current_data.get(CONF_AWAY_MAX_TEMPERATURE, DEFAULT_AWAY_MAX_TEMPERATURE)
+            ): vol.All(vol.Coerce(float), vol.Range(min=60, max=95)),
         })
 
         return self.async_show_form(
@@ -424,7 +463,16 @@ class SmartThermostatOptionsFlow(config_entries.OptionsFlow):
         """Validate advanced options."""
         errors: dict[str, str] = {}
 
-        # All validation is handled by voluptuous schema
-        # Additional custom validation can be added here if needed
+        # Validate away mode temperature ranges
+        if (
+            user_input.get(CONF_AWAY_MODE_ENABLED, False) and
+            CONF_AWAY_MIN_TEMPERATURE in user_input and
+            CONF_AWAY_MAX_TEMPERATURE in user_input
+        ):
+            away_min = user_input[CONF_AWAY_MIN_TEMPERATURE]
+            away_max = user_input[CONF_AWAY_MAX_TEMPERATURE]
+            
+            if away_max <= away_min:
+                errors["away_max_temperature"] = "away_max_must_be_greater_than_min"
 
         return errors

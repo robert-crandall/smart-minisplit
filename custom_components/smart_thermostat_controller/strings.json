@@ -35,7 +35,10 @@
           "learning_enabled": "Enable Offset Learning",
           "learning_period_days": "Learning Period (days)",
           "default_cooling_offset": "Default Cooling Offset (°F)",
-          "idle_temperature_offset": "Idle Temperature Offset (°F)"
+          "idle_temperature_offset": "Idle Temperature Offset (°F)",
+          "away_mode_enabled": "Enable Away Mode",
+          "away_min_temperature": "Away Minimum Temperature (°F)",
+          "away_max_temperature": "Away Maximum Temperature (°F)"
         }
       }
     },
@@ -48,7 +51,8 @@
       "invalid_humidity_value": "Humidity sensor does not provide a valid numeric value.",
       "sensors_must_be_different": "Temperature and humidity sensors must be different entities.",
       "name_exists": "An integration with this name already exists.",
-      "max_must_be_greater_than_min": "Maximum humidity threshold must be greater than minimum."
+      "max_must_be_greater_than_min": "Maximum humidity threshold must be greater than minimum.",
+      "away_max_must_be_greater_than_min": "Away maximum temperature must be greater than minimum temperature."
     },
     "abort": {
       "already_configured": "This integration is already configured."
@@ -74,12 +78,16 @@
           "learning_enabled": "Enable Offset Learning",
           "learning_period_days": "Learning Period (days)",
           "default_cooling_offset": "Default Cooling Offset (°F)",
-          "idle_temperature_offset": "Idle Temperature Offset (°F)"
+          "idle_temperature_offset": "Idle Temperature Offset (°F)",
+          "away_mode_enabled": "Enable Away Mode",
+          "away_min_temperature": "Away Minimum Temperature (°F)",
+          "away_max_temperature": "Away Maximum Temperature (°F)"
         }
       }
     },
     "error": {
-      "max_must_be_greater_than_min": "Maximum humidity threshold must be greater than minimum."
+      "max_must_be_greater_than_min": "Maximum humidity threshold must be greater than minimum.",
+      "away_max_must_be_greater_than_min": "Away maximum temperature must be greater than minimum temperature."
     }
   }
 }

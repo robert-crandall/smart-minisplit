@@ -206,6 +206,7 @@ class SmartThermostatClimate(CoordinatorEntity[SmartThermostatCoordinator], Clim
             "offset_confidence": f"{self.coordinator.data.offset_confidence:.1%}",
             "manual_override": self.coordinator.data.manual_override,
             "cooldown_remaining": self.coordinator.data.cooldown_remaining,
+            "away_mode": self.coordinator.data.away_mode,
         }
         
         if self.coordinator.data.last_mode_change:
