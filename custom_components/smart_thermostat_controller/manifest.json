@@ -1,0 +1,16 @@
+{
+  "domain": "smart_thermostat_controller",
+  "name": "Smart Thermostat Controller",
+  "version": "1.0.0",
+  "documentation": "https://github.com/your-repo/smart-thermostat-controller",
+  "issue_tracker": "https://github.com/your-repo/smart-thermostat-controller/issues",
+  "dependencies": [],
+  "codeowners": ["@your-username"],
+  "requirements": [],
+  "config_flow": true,
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "homeassistant": "2023.1.0",
+  "after_dependencies": ["climate", "sensor"],
+  "quality_scale": "silver"
+}

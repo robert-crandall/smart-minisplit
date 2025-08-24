@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Smart Thermostat Controller Setup",
+        "description": "Configure your smart thermostat controller. You have {climate_count} climate entities available.",
+        "data": {
+          "name": "Name",
+          "minisplit_climate_entity": "Minisplit Climate Entity"
+        }
+      },
+      "sensors": {
+        "title": "Sensor Configuration",
+        "description": "Select the external sensors for temperature and humidity monitoring.",
+        "data": {
+          "external_temperature_sensor": "External Temperature Sensor",
+          "external_humidity_sensor": "External Humidity Sensor"
+        }
+      },
+      "thresholds": {
+        "title": "Temperature and Humidity Thresholds",
+        "description": "Configure the target temperature and humidity thresholds for automatic control.",
+        "data": {
+          "target_temperature": "Target Temperature (°F)",
+          "humidity_max_threshold": "Maximum Humidity (%)",
+          "humidity_min_threshold": "Minimum Humidity (%)",
+          "temperature_deadband": "Temperature Deadband (°F)"
+        }
+      },
+      "advanced": {
+        "title": "Advanced Settings",
+        "description": "Configure advanced settings for cooldown periods and learning behavior.",
+        "data": {
+          "cooldown_period": "Cooldown Period (seconds)",
+          "learning_enabled": "Enable Offset Learning",
+          "learning_period_days": "Learning Period (days)",
+          "default_cooling_offset": "Default Cooling Offset (°F)"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "The selected entity was not found.",
+      "invalid_entity_domain": "The selected entity is not of the correct type.",
+      "invalid_temperature_range": "Temperature value is outside valid range (-50°F to 120°F).",
+      "invalid_temperature_value": "Temperature sensor does not provide a valid numeric value.",
+      "invalid_humidity_range": "Humidity value is outside valid range (0% to 100%).",
+      "invalid_humidity_value": "Humidity sensor does not provide a valid numeric value.",
+      "sensors_must_be_different": "Temperature and humidity sensors must be different entities.",
+      "name_exists": "An integration with this name already exists.",
+      "max_must_be_greater_than_min": "Maximum humidity threshold must be greater than minimum."
+    },
+    "abort": {
+      "already_configured": "This integration is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "thresholds": {
+        "title": "Update Temperature and Humidity Thresholds",
+        "description": "Modify the target temperature and humidity thresholds.",
+        "data": {
+          "target_temperature": "Target Temperature (°F)",
+          "humidity_max_threshold": "Maximum Humidity (%)",
+          "humidity_min_threshold": "Minimum Humidity (%)",
+          "temperature_deadband": "Temperature Deadband (°F)"
+        }
+      },
+      "advanced_options": {
+        "title": "Update Advanced Settings",
+        "description": "Modify advanced settings for cooldown periods and learning behavior.",
+        "data": {
+          "cooldown_period": "Cooldown Period (seconds)",
+          "learning_enabled": "Enable Offset Learning",
+          "learning_period_days": "Learning Period (days)",
+          "default_cooling_offset": "Default Cooling Offset (°F)"
+        }
+      }
+    },
+    "error": {
+      "max_must_be_greater_than_min": "Maximum humidity threshold must be greater than minimum."
+    }
+  }
+}
