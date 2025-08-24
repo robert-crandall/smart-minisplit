@@ -58,7 +58,6 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
             hass,
             version=1,
             key=f"{DOMAIN}_{entry.entry_id}",
-            encoder=self._encode_data,
         )
         
         super().__init__(
@@ -338,7 +337,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
         try:
             data = await self._store.async_load()
             if data is not None:
-                # Decode the data manually since we can't use a custom decoder
+                # Decode the data 
                 decoded_data = self._decode_data(data)
                 self._historical_data = decoded_data.get("historical_data", [])
                 self._learned_offset = decoded_data.get("learned_offset", self.config.default_cooling_offset)
@@ -348,7 +347,11 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
                 # Parse last mode change timestamp
                 last_change_str = decoded_data.get("last_mode_change")
                 if last_change_str:
-                    self._last_mode_change = datetime.fromisoformat(last_change_str)
+                    try:
+                        self._last_mode_change = datetime.fromisoformat(last_change_str)
+                    except (ValueError, TypeError) as err:
+                        _LOGGER.warning("Invalid timestamp in stored data: %s", err)
+                        self._last_mode_change = None
                     
                 _LOGGER.info("Loaded %d historical data points", len(self._historical_data))
                 
@@ -370,7 +373,7 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
                 "last_mode_change": self._last_mode_change.isoformat() if self._last_mode_change else None,
                 "away_mode": self._away_mode,
             }
-            # Encode the data before saving
+            # Encode the data to ensure JSON serializability
             encoded_data = self._encode_data(data)
             await self._store.async_save(encoded_data)
             
@@ -401,17 +404,27 @@ class SmartThermostatCoordinator(DataUpdateCoordinator[ControllerState]):
         decoded = data.copy()
         
         # Convert dictionaries back to TemperatureDataPoint objects
-        if "historical_data" in decoded:
-            decoded["historical_data"] = [
-                TemperatureDataPoint(
-                    timestamp=datetime.fromisoformat(dp["timestamp"]),
-                    external_temperature=dp["external_temperature"],
-                    internal_temperature=dp["internal_temperature"],
-                    minisplit_mode=dp["minisplit_mode"],
-                    minisplit_active=dp["minisplit_active"],
-                )
-                for dp in decoded["historical_data"]
-            ]
+        if "historical_data" in decoded and isinstance(decoded["historical_data"], list):
+            try:
+                decoded["historical_data"] = [
+                    TemperatureDataPoint(
+                        timestamp=datetime.fromisoformat(dp["timestamp"]),
+                        external_temperature=float(dp["external_temperature"]),
+                        internal_temperature=float(dp["internal_temperature"]),
+                        minisplit_mode=str(dp["minisplit_mode"]),
+                        minisplit_active=bool(dp["minisplit_active"]),
+                    )
+                    for dp in decoded["historical_data"]
+                    if isinstance(dp, dict) and all(key in dp for key in [
+                        "timestamp", "external_temperature", "internal_temperature", 
+                        "minisplit_mode", "minisplit_active"
+                    ])
+                ]
+            except (ValueError, TypeError, KeyError) as err:
+                _LOGGER.warning("Error decoding historical data: %s", err)
+                decoded["historical_data"] = []
+        else:
+            decoded["historical_data"] = []
         
         return decoded
 
