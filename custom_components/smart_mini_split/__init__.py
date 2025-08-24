@@ -23,6 +23,7 @@ DEFAULT_COOLING_OVERSHOOT = 1.0 # Stop cooling when the actual temperature excee
 DEFAULT_LOG_LEVEL = "info"
 DEFAULT_CLIMATE_ENTITY = "climate.minisplit"
 DEFAULT_EXTERNAL_TEMP_SENSOR = "sensor.awair_element_110243_temperature"
+DEFAULT_EXTERNAL_HUMIDITY_SENSOR = "sensor.awair_element_110243_humidity"
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     # Read options from configuration, with defaults
@@ -39,6 +40,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     cooling_overshoot = domain_config.get("cooling_overshoot", DEFAULT_COOLING_OVERSHOOT)
     climate_entity = domain_config.get("climate_entity", DEFAULT_CLIMATE_ENTITY)
     external_temp_sensor = domain_config.get("external_temp_sensor", DEFAULT_EXTERNAL_TEMP_SENSOR)
+    external_humidity_sensor = domain_config.get("external_humidity_sensor", DEFAULT_EXTERNAL_HUMIDITY_SENSOR)
 
     controller = MiniSplitController(
         hass,
@@ -50,6 +52,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         cooling_overshoot=cooling_overshoot,
         climate_entity=climate_entity,
         external_temp_sensor=external_temp_sensor,
+        external_humidity_sensor=external_humidity_sensor,
     )
     async def run_update(now):
         await controller.update(now)
@@ -63,7 +66,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 class MiniSplitController:
-    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_PERIOD_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_overshoot: float = DEFAULT_HEATING_OVERSHOOT, cooling_overshoot: float = DEFAULT_COOLING_OVERSHOOT, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR):
+    def __init__(self, hass: HomeAssistant, log_level: str = "info", wait_period_minutes: int = DEFAULT_WAIT_PERIOD_MINUTES, heating_threshold: float = DEFAULT_HEATING_THRESHOLD, cooling_threshold: float = DEFAULT_COOLING_THRESHOLD, heating_overshoot: float = DEFAULT_HEATING_OVERSHOOT, cooling_overshoot: float = DEFAULT_COOLING_OVERSHOOT, climate_entity: str = DEFAULT_CLIMATE_ENTITY, external_temp_sensor: str = DEFAULT_EXTERNAL_TEMP_SENSOR, external_humidity_sensor: str = DEFAULT_EXTERNAL_HUMIDITY_SENSOR):
         self.hass = hass
         self.last_adjustment: datetime | None = None
         self.last_desired_temp: float | None = None
@@ -75,6 +78,7 @@ class MiniSplitController:
         self.cooling_overshoot = cooling_overshoot
         self.climate_entity = climate_entity
         self.external_temp_sensor = external_temp_sensor
+        self.external_humidity_sensor = external_humidity_sensor
 
         self.cooling_input_boolean = "input_boolean.cooling_enabled"
         self.cooling_desired_temp_input = "input_number.cooling_desired_temp"
@@ -85,8 +89,9 @@ class MiniSplitController:
 
         self.heating_active_temp = 82 # Temperature to set for heating
         self.cooling_active_temp = 60 # Temperature to set for cooling
-        self.heating_idle_temp = 62 # Temperature to reset heating
-        self.cooling_idle_temp = 76 # Temperature to reset cooling
+        self.heating_idle_temp_value = 62 # Likely deprecated. Temperature to set when idle
+        self.cooling_idle_temp_value = 76 # Likely deprecated. Temperature to set when idle
+        self.dry_mode_humidity = 55 # Humidity level to enable dry mode. Should make this a variable.
 
         self.lowest_cooling_temp = 65 # Lowest temperature to set for cooling
         self.highest_heating_temp = 75 # Highest temperature to set for heating
@@ -129,6 +134,17 @@ class MiniSplitController:
             self.log_message(f"Invalid temperature sensor value: {sensor_state.state}", "warning")
             return None
 
+    def external_humidity(self) -> float | None:
+        sensor_state = self.hass.states.get(self.external_humidity_sensor)
+        if sensor_state is None:
+            self.log_message("Humidity sensor not available", "warning")
+            return None
+        try:
+            return float(sensor_state.state)
+        except (ValueError, TypeError):
+            self.log_message(f"Invalid humidity sensor value: {sensor_state.state}", "warning")
+            return None
+
     def heating_desired_temp(self) -> float | None:
         state_obj = self.hass.states.get(self.heating_desired_temp_input)
         if state_obj is None:
@@ -144,6 +160,10 @@ class MiniSplitController:
             self.log_message(f"Invalid heating setpoint value: {state_obj.state}", "warning")
             return None
 
+    def heating_idle_temp(self) -> float | None:
+        """Return the idle temperature for heating."""
+        return self.heating_desired_temp()
+
     def needs_heating(self, external_temp: float) -> bool:
         heating_allowed = self.hass.states.get(self.heating_input_boolean)
         if heating_allowed.state == "on":
@@ -151,13 +171,13 @@ class MiniSplitController:
             if external_temp is None or heating_desired_temp is None:
                 return False
             last_cooling_event = self.get_last_event(self.last_cooling_event_entity)
-            if last_cooling_event and (datetime.now() - last_cooling_event) < timedelta(minutes=15):
-                self.log_message("Skipping heating: last cooling event was less than 15 minutes ago", "debug")
-                return False
             if external_temp < (heating_desired_temp - self.heating_threshold):
-                self.log_message(f"Heating needed. Current={external_temp}, Desired={heating_desired_temp}", "debug")
+                if last_cooling_event and (datetime.now() - last_cooling_event) < timedelta(minutes=15):
+                    self.log_message("Heating needed, but skipped: last cooling event was less than 15 minutes ago", "debug")
+                    return False
+                self.log_message(f"Heating needed. Current={external_temp}, Desired={heating_desired_temp}", "info")
                 return True
-            # self.log_message(f"Heating is not needed needed. Current={current}, Desired={heating_desired_temp}", "debug")
+            self.log_message(f"Heating is not needed needed. Current={external_temp}, Desired={heating_desired_temp}", "verbose")
         return False
 
     def cooling_desired_temp(self) -> float | None:
@@ -170,11 +190,16 @@ class MiniSplitController:
             desired_temp = float(state_obj.state)
             if desired_temp > self.lowest_cooling_temp:
                 return desired_temp
-            self.log_message(f"Cooling setpoint {desired_temp} is above the minimum allowed temperature {self.lowest_cooling_temp}.", "warning")
-            return None
+            self.log_message(f"Cooling setpoint {desired_temp} is below the minimum allowed temperature {self.lowest_cooling_temp}.", "warning")
+            return self.lowest_cooling_temp
         except (ValueError, TypeError):
             self.log_message(f"Invalid cooling setpoint value: {state_obj.state}", "warning")
             return None
+
+    def cooling_idle_temp(self) -> float | None:
+        """Return the idle temperature for cooling."""
+        # Internal temperature is often off by a few degrees. But want this close to the real cooling temperature to enforce drying.
+        return self.cooling_desired_temp() + 4
 
     def needs_cooling(self, external_temp: float) -> bool:
         cooling_allowed = self.hass.states.get(self.cooling_input_boolean)
@@ -183,20 +208,20 @@ class MiniSplitController:
         # Safety check
         heating_desired_temp = self.heating_desired_temp()
         cooling_desired_temp = self.cooling_desired_temp()
-        if not heating_desired_temp < (cooling_desired_temp - 2):
+        if not (heating_desired_temp + self.heating_overshoot) < cooling_desired_temp:
             self.log_message(f"Heating desired temp {heating_desired_temp} is too close to the cooling desired temp {cooling_desired_temp}. Set these more apart to avoid conflicts.", "warning")
             return False
             
         if external_temp is None or cooling_desired_temp is None:
             return False
         last_heating_event = self.get_last_event(self.last_heating_event_entity)
-        if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
-            self.log_message("Skipping cooling: last heating event was less than 15 minutes ago", "debug")
-            return False
         if external_temp > (cooling_desired_temp + self.cooling_threshold):
+            if last_heating_event and (datetime.now() - last_heating_event) < timedelta(minutes=15):
+                self.log_message("Cooling needed but skipped: last heating event was less than 15 minutes ago", "debug")
+                return False
             self.log_message(f"Cooling needed. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
             return True
-        # self.log_message(f"Cooling is not needed. Current={current}, Desired={cooling_desired_temp}", "debug")
+        self.log_message(f"Cooling is not needed. Current={external_temp}, Desired={cooling_desired_temp}", "verbose")
 
     def current_mode(self) -> str | None:
         """Return 'heat', 'cool', or None. Looks at the climate entity state."""
@@ -205,11 +230,7 @@ class MiniSplitController:
             self.log_message("Climate entity not available yet.", "warning")
             return None
         mode = climate_state.state
-        if mode == "heat" or mode == "cool":
-            return mode
-        self.log_message("Current mode not available yet. Returning None instead.", "warning")
-        # Debug all available attributes to see what's available
-        return None
+        return mode
 
     def get_climate_setpoint(self) -> float | None:
         """Return the current set temperature from the climate entity."""
@@ -221,9 +242,17 @@ class MiniSplitController:
         if set_temp is not None:
             return set_temp
         self.log_message("Set temperature not available yet.", "warning")
-        # Debug all available attributes to see what's available
-        # self.debug_entity_attributes(self.climate_entity)
         return None
+
+    def use_dry_mode(self) -> bool:
+        """Determine if dry mode should be used based on humidity."""
+        external_humidity = self.external_humidity()
+        if external_humidity is None:
+            self.log_message("External humidity sensor not available.", "warning")
+            return False
+        if external_humidity >= self.dry_mode_humidity:
+            return True
+        return False
 
     async def adjust_climate_setpoint(self, target_temp: float, mode: str = None, message: str = None) -> None:
         # Set mode if specified
@@ -231,6 +260,8 @@ class MiniSplitController:
             "entity_id": self.climate_entity,
             "temperature": target_temp
         }
+        if mode and mode == "cool" and self.use_dry_mode():
+            mode = "dry"
         if mode:
             service_data["hvac_mode"] = mode
         log_message = f"Adjusting set temperature to {target_temp}"
@@ -249,25 +280,26 @@ class MiniSplitController:
         now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         if mode == "heat":
             await self.set_last_event(self.last_heating_event_entity, now_str)
-        elif mode == "cool":
+        else:
             await self.set_last_event(self.last_cooling_event_entity, now_str)
 
     async def enforce_idle_mode(
-          self,
-          current_mode: str = None,
-        ) -> None:
+        self,
+        current_mode: str = None,
+    ) -> None:
         """Enforce idle mode by resetting the set temperature."""
         # Determine last mode for reset
-
-        idle_temperature = self.heating_idle_temp
-        if current_mode == "cool":
-            idle_temperature = self.cooling_idle_temp
-        await self.adjust_climate_setpoint(idle_temperature, mode=current_mode, message="enforcing idle mode")
+        if current_mode == "heat":
+            idle_temperature = self.heating_idle_temp()
+        else:
+            idle_temperature = self.cooling_idle_temp()
+        if idle_temperature is not None:
+            await self.adjust_climate_setpoint(idle_temperature, mode=current_mode, message="enforcing idle mode")
 
     def climate_is_active(
-          self,
-          climate_setpoint: int = None,
-        ) -> bool:
+        self,
+        climate_setpoint: int = None,
+    ) -> bool:
         """Check if the current temperature is either heating or cooling."""
         if climate_setpoint is None:
             return False
@@ -279,38 +311,38 @@ class MiniSplitController:
         return False
 
     def temperature_reached_threshold(self, 
-          external_temp: float = None,
-          current_mode: str = None,
-        ) -> bool:
+        external_temp: float = None,
+        current_mode: str = None,
+    ) -> bool:
         
         if current_mode == "heat":
             heating_desired_temp = self.heating_desired_temp()
             if external_temp >= (heating_desired_temp + self.heating_overshoot):
                 self.log_message(f"Heating has reached threshold. Current={external_temp}, Desired={heating_desired_temp}", "debug")
                 return True
-
-        if current_mode == "cool":
+            self.log_message(f"Temperature threshold not reached. Current={external_temp}, Heating setpoint={heating_desired_temp}", "debug")
+            return False
+        else:
             cooling_desired_temp = self.cooling_desired_temp()
             if external_temp <= (cooling_desired_temp - self.cooling_overshoot):
                 self.log_message(f"Cooling has reached threshold. Current={external_temp}, Desired={cooling_desired_temp}", "debug")
                 return True
-
-        self.log_message(f"Temperature threshold not reached. Current={external_temp}, Heating setpoint={heating_desired_temp}, Cooling setpoint={cooling_desired_temp}, current_mode={current_mode}", "debug")
-        return False
+            self.log_message(f"Temperature threshold not reached. Current={external_temp}, Cooling setpoint={cooling_desired_temp}", "debug")
+            return False
 
     async def update_desired_temp(self, setpoint: float, mode: str) -> None:
         if mode == "heat":
             entity_id = self.heating_desired_temp_input
-        elif mode == "cool":
+        else:
             entity_id = self.cooling_desired_temp_input
         if entity_id:
-            self.log_message(f"Updating {mode} setpoint to {setpoint}", "info")
+            self.log_message(f"Updating {mode} desired temperature to {setpoint}", "info")
             await self.hass.services.async_call(
                 "input_number",
                 "set_value",
                 {
                     "entity_id": entity_id,
-                    "value": setpoint  # your new value here
+                    "value": setpoint
                 },
                 blocking=True,
             )
@@ -338,39 +370,49 @@ class MiniSplitController:
             blocking=True,
         )
 
+    def numbers_are_close(self, num1: float, num2: float) -> bool:
+        """Check if two numbers are close enough to be equal, able to compare float to int."""
+        if num1 is None or num2 is None:
+            return False
+        return abs(num1 - num2) < 0.1
+
     async def climate_has_manually_adjusted_setpoint(
         self, 
         allow_current_setpoint: bool = False,
         current_set_point: float = None,
         current_mode: str = None,
-       ) -> bool:
+    ) -> bool:
+        return False # TODO - reenable this
         """Check if the set temperature is outside known numbers."""
         if current_mode == "heat":
-            if current_set_point is self.heating_active_temp or current_set_point is self.heating_idle_temp:
+            if self.numbers_are_close(current_set_point, self.heating_active_temp) or self.numbers_are_close(current_set_point, self.heating_idle_temp()):
                 return False
-            if allow_current_setpoint and current_set_point == int(self.heating_desired_temp()):
+            if allow_current_setpoint and self.numbers_are_close(current_set_point, self.heating_desired_temp()):
                 return False
             return True
-        if current_mode == "cool":
-            if current_set_point is self.cooling_active_temp or current_set_point is self.cooling_idle_temp:
+        else:
+            if self.numbers_are_close(current_set_point, self.cooling_active_temp) or self.numbers_are_close(current_set_point, self.cooling_idle_temp() or self.numbers_are_close(current_set_point, self.cooling_idle_temp_value)):
                 return False
-            if allow_current_setpoint and current_set_point == int(self.cooling_desired_temp()):
+            if allow_current_setpoint and self.numbers_are_close(current_set_point, self.cooling_desired_temp()):
                 return False
             return True
     
     async def force_reset_setpoint(self, call):
         """Force reset the set temperature."""
+        # If there's no manual adjustment, we don't need to reset
         if not await self.climate_has_manually_adjusted_setpoint(allow_current_setpoint=False):
             return
+
         # Determine last mode for reset
         current_mode = self.current_mode()
         current_set_point = self.get_climate_setpoint()
         if current_mode == "heat":
-            self.log_message(f"Should force reset heating. Current={current_set_point}, Desired={self.heating_idle_temp}", "info")
-            await self.adjust_climate_setpoint(self.heating_idle_temp, mode="heat")
-        if current_mode == "cool":
-            self.log_message(f"Should force reset cooling. Current={current_set_point}, Desired={self.cooling_idle_temp}", "info")
-            await self.adjust_climate_setpoint(self.cooling_idle_temp, mode="cool")
+            self.log_message(f"Should force reset heating. Current={current_set_point}, Desired={self.heating_idle_temp()}", "info")
+            await self.adjust_climate_setpoint(self.heating_idle_temp(), mode="heat")
+        else:
+            self.log_message(f"Should force reset cooling. Current={current_set_point}, Desired={self.cooling_idle_temp()}", "info")
+            await self.adjust_climate_setpoint(self.cooling_idle_temp(), mode=current_mode)
+
         if not self.climate_is_active(climate_setpoint=current_set_point):
             self.log_message(f"Climate setpoint is still manually adjusted, resetting to an idle state", "info")
             current_mode = self.current_mode()
@@ -378,47 +420,79 @@ class MiniSplitController:
 
     @callback
     async def update(self, now):
-        if self.in_wait_period():
-            return
+        try:
+            if self.in_wait_period():
+                return
 
-        external_temperature = self.external_temperature()
-        current_set_point = self.get_climate_setpoint()
-        current_mode = self.current_mode()
+            external_temperature = self.external_temperature()
+            external_humidity = self.external_humidity()
+            current_set_point = self.get_climate_setpoint()
+            current_mode = self.current_mode()
 
-        # Skip if we don't have valid temperature readings
-        if external_temperature is None or current_set_point is None or current_mode is None:
-            self.log_message("Skipping update: missing temperature data", "debug")
-            return
+            # Skip if we don't have valid temperature readings
+            if external_temperature is None or current_set_point is None or current_mode is None:
+                self.log_message("Skipping update: missing temperature data", "debug")
+                return
 
-        # Check if there is a manually adjusted temperature
-        if await self.climate_has_manually_adjusted_setpoint(
-            allow_current_setpoint=True,
-            current_set_point=current_set_point,
-            current_mode=current_mode
-        ):
-            if current_set_point is not None:
-                self.log_message(f"Manually adjusted temperature of {current_set_point} detected. Updating setpoint.", "debug")
-                await self.update_desired_temp(current_set_point, current_mode)
-            return
-
-        if self.climate_is_active(climate_setpoint=current_set_point):
-            if self.temperature_reached_threshold(
-                external_temp=external_temperature,
+            # Check if there is a manually adjusted temperature
+            if await self.climate_has_manually_adjusted_setpoint(
+                allow_current_setpoint=True,
+                current_set_point=current_set_point,
                 current_mode=current_mode
             ):
-                await self.enforce_idle_mode(current_mode=current_mode)
-            return
+                self.log_message("Climate has manually adjusted setpoint", "debug")
+                if current_set_point is not None:
+                    self.log_message(f"Manually adjusted temperature of {current_set_point} detected. Updating setpoint.", "debug")
+                    await self.update_desired_temp(current_set_point, current_mode)
+                return
 
-        if self.needs_heating(external_temperature):
-            await self.adjust_climate_setpoint(self.heating_active_temp, mode="heat")
-            return
+            if self.climate_is_active(climate_setpoint=current_set_point):
+                self.log_message("Climate is currently active.", "verbose")
+                if self.temperature_reached_threshold(
+                    external_temp=external_temperature,
+                    current_mode=current_mode
+                ):
+                    self.log_message(f"Enforcing idle state on {current_mode} mode.", "debug")
+                    await self.enforce_idle_mode(current_mode=current_mode)
+                return
 
-        if self.needs_cooling(external_temperature):
-            await self.adjust_climate_setpoint(self.cooling_active_temp, mode="cool")
-            return
+            if self.needs_heating(external_temperature):
+                self.log_message(f"Needs heating, current temperature={external_temperature}", "debug")
+                await self.adjust_climate_setpoint(self.heating_active_temp, mode="heat")
+                return
+
+            if self.needs_cooling(external_temperature):
+                self.log_message(f"Needs cooling, current temperature={external_temperature}", "debug")
+                await self.adjust_climate_setpoint(self.cooling_active_temp, mode="cool")
+                return
+
+            # This is very noisy. Use it to confirm logs are working correctly.
+            self.log_message(f"No action needed. Current temperature={external_temperature}", "verbose")
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            self.log_message(f"Exception in update: {e}\nTraceback:\n{tb}", "warning")
 
     def log_message(self, message, level="info"):
         """Log message to Home Assistant logbook and logger, respecting configured log level."""
+        # Verbose mode: log everything
+        if self.log_level == "verbose":
+            print(f"[{level.upper()}] {message}")
+            _LOGGER.debug(message)
+            try:
+                log_entry(
+                    self.hass,
+                    "Smart Mini Split",
+                    message,
+                    DOMAIN,
+                )
+            except Exception as e:
+                _LOGGER.debug(f"Failed to log to logbook: {e}")
+            return
+
+        if level == "verbose":
+            return
+
         # Only log debug messages if log_level is 'debug'
         if level == "debug" and self.log_level != "debug":
             return
