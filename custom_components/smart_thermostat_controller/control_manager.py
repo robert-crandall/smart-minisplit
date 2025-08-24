@@ -60,8 +60,9 @@ class ControlManager:
         Calculate the required control action based on sensor readings and state.
         
         Priority order:
-        1. Humidity control (if humidity sensor available and exceeds threshold)
-        2. Temperature control with deadband
+        1. Heating if temperature is below target - deadband
+        2. Cooling if temperature is above target + deadband
+           - Use dry mode instead of cool if humidity > threshold
         3. Off if within acceptable ranges
         
         Args:
@@ -101,66 +102,21 @@ class ControlManager:
             cooldown_remaining = self._get_cooldown_remaining()
             can_execute = cooldown_remaining == 0
 
-            # Priority 1: Humidity control
-            if (
-                sensor_readings.humidity_available
-                and sensor_readings.humidity is not None
-                and sensor_readings.humidity > self._config.humidity_max_threshold
-            ):
-                action = ControlAction(
-                    action_type=HVAC_MODE_DRY,
-                    target_temperature=controller_state.target_temperature,
-                    reason=f"Humidity {sensor_readings.humidity:.1f}% > {self._config.humidity_max_threshold:.1f}%",
-                    can_execute=can_execute,
-                    cooldown_remaining=cooldown_remaining,
-                )
-                
-                self._logger.log_decision(
-                    decision=action.action_type,
-                    reasoning=f"Priority 1 - Humidity control: {action.reason}",
-                    sensor_data={"humidity": sensor_readings.humidity},
-                    controller_state={"threshold": self._config.humidity_max_threshold}
-                )
-                
-                return action
-
-            # Priority 2: Temperature control with deadband
+            # Priority 1: Heating if needed
             if (
                 sensor_readings.temperature_available
                 and sensor_readings.temperature is not None
             ):
                 temp_diff = sensor_readings.temperature - controller_state.target_temperature
                 
-                # Apply learned offset to target temperature for minisplit
-                adjusted_target = self._apply_learned_offset(
-                    controller_state.target_temperature,
-                    controller_state.learned_offset,
-                    HVAC_MODE_COOL if temp_diff > 0 else HVAC_MODE_HEAT,
-                )
-
-                if temp_diff > self._config.temperature_deadband:
-                    action = ControlAction(
-                        action_type=HVAC_MODE_COOL,
-                        target_temperature=adjusted_target,
-                        reason=f"Temperature {sensor_readings.temperature:.1f}°F > target {controller_state.target_temperature:.1f}°F + deadband {self._config.temperature_deadband:.1f}°F",
-                        can_execute=can_execute,
-                        cooldown_remaining=cooldown_remaining,
+                if temp_diff < -self._config.temperature_deadband:
+                    # Apply learned offset to target temperature for minisplit
+                    adjusted_target = self._apply_learned_offset(
+                        controller_state.target_temperature,
+                        controller_state.learned_offset,
+                        HVAC_MODE_HEAT,
                     )
                     
-                    self._logger.log_decision(
-                        decision=action.action_type,
-                        reasoning=f"Priority 2 - Cooling needed: {action.reason}",
-                        sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff},
-                        controller_state={
-                            "target": controller_state.target_temperature,
-                            "adjusted_target": adjusted_target,
-                            "deadband": self._config.temperature_deadband
-                        }
-                    )
-                    
-                    return action
-
-                elif temp_diff < -self._config.temperature_deadband:
                     action = ControlAction(
                         action_type=HVAC_MODE_HEAT,
                         target_temperature=adjusted_target,
@@ -171,7 +127,7 @@ class ControlManager:
                     
                     self._logger.log_decision(
                         decision=action.action_type,
-                        reasoning=f"Priority 2 - Heating needed: {action.reason}",
+                        reasoning=f"Priority 1 - Heating needed: {action.reason}",
                         sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff},
                         controller_state={
                             "target": controller_state.target_temperature,
@@ -181,6 +137,69 @@ class ControlManager:
                     )
                     
                     return action
+
+            # Priority 2: Cooling if needed (with dry mode for high humidity)
+            if (
+                sensor_readings.temperature_available
+                and sensor_readings.temperature is not None
+            ):
+                temp_diff = sensor_readings.temperature - controller_state.target_temperature
+                
+                if temp_diff > self._config.temperature_deadband:
+                    # Check if humidity is high - use dry mode instead of cool
+                    if (
+                        sensor_readings.humidity_available
+                        and sensor_readings.humidity is not None
+                        and sensor_readings.humidity > self._config.humidity_max_threshold
+                    ):
+                        action = ControlAction(
+                            action_type=HVAC_MODE_DRY,
+                            target_temperature=controller_state.target_temperature,
+                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > target + deadband AND humidity {sensor_readings.humidity:.1f}% > {self._config.humidity_max_threshold:.1f}%",
+                            can_execute=can_execute,
+                            cooldown_remaining=cooldown_remaining,
+                        )
+                        
+                        self._logger.log_decision(
+                            decision=action.action_type,
+                            reasoning=f"Priority 2 - Cooling needed with high humidity, using dry mode: {action.reason}",
+                            sensor_data={"temperature": sensor_readings.temperature, "humidity": sensor_readings.humidity, "temp_diff": temp_diff},
+                            controller_state={
+                                "target": controller_state.target_temperature,
+                                "humidity_threshold": self._config.humidity_max_threshold,
+                                "deadband": self._config.temperature_deadband
+                            }
+                        )
+                        
+                        return action
+                    else:
+                        # Normal cooling - humidity is acceptable or not available
+                        adjusted_target = self._apply_learned_offset(
+                            controller_state.target_temperature,
+                            controller_state.learned_offset,
+                            HVAC_MODE_COOL,
+                        )
+                        
+                        action = ControlAction(
+                            action_type=HVAC_MODE_COOL,
+                            target_temperature=adjusted_target,
+                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > target {controller_state.target_temperature:.1f}°F + deadband {self._config.temperature_deadband:.1f}°F",
+                            can_execute=can_execute,
+                            cooldown_remaining=cooldown_remaining,
+                        )
+                        
+                        self._logger.log_decision(
+                            decision=action.action_type,
+                            reasoning=f"Priority 2 - Cooling needed: {action.reason}",
+                            sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff},
+                            controller_state={
+                                "target": controller_state.target_temperature,
+                                "adjusted_target": adjusted_target,
+                                "deadband": self._config.temperature_deadband
+                            }
+                        )
+                        
+                        return action
 
             # Priority 3: Turn off if within acceptable ranges
             action = ControlAction(
