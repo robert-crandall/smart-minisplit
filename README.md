@@ -331,3 +331,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and updates.
+
+## TODO
+
+- [ ] Remove variables not in use (min_humidity)
+- [ ] Remove out of date documentation
