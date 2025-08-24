@@ -91,7 +91,7 @@ class MiniSplitController:
         self.cooling_active_temp = 60 # Temperature to set for cooling
         self.heating_idle_temp_value = 62 # Likely deprecated. Temperature to set when idle
         self.cooling_idle_temp_value = 76 # Likely deprecated. Temperature to set when idle
-        self.dry_mode_humidity = 65 # Humidity level to enable dry mode. Should make this a variable.
+        self.dry_mode_humidity = 55 # Humidity level to enable dry mode. Should make this a variable.
 
         self.lowest_cooling_temp = 65 # Lowest temperature to set for cooling
         self.highest_heating_temp = 75 # Highest temperature to set for heating
@@ -198,8 +198,8 @@ class MiniSplitController:
 
     def cooling_idle_temp(self) -> float | None:
         """Return the idle temperature for cooling."""
-        return self.cooling_idle_temp_value
-
+        # Internal temperature is often off by a few degrees. But want this close to the real cooling temperature to enforce drying.
+        return self.cooling_desired_temp() + 4
 
     def needs_cooling(self, external_temp: float) -> bool:
         cooling_allowed = self.hass.states.get(self.cooling_input_boolean)
@@ -382,6 +382,7 @@ class MiniSplitController:
         current_set_point: float = None,
         current_mode: str = None,
     ) -> bool:
+        return False # TODO - reenable this
         """Check if the set temperature is outside known numbers."""
         if current_mode == "heat":
             if self.numbers_are_close(current_set_point, self.heating_active_temp) or self.numbers_are_close(current_set_point, self.heating_idle_temp()):
@@ -390,7 +391,7 @@ class MiniSplitController:
                 return False
             return True
         else:
-            if self.numbers_are_close(current_set_point, self.cooling_active_temp) or self.numbers_are_close(current_set_point, self.cooling_idle_temp()):
+            if self.numbers_are_close(current_set_point, self.cooling_active_temp) or self.numbers_are_close(current_set_point, self.cooling_idle_temp() or self.numbers_are_close(current_set_point, self.cooling_idle_temp_value)):
                 return False
             if allow_current_setpoint and self.numbers_are_close(current_set_point, self.cooling_desired_temp()):
                 return False
