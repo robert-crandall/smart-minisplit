@@ -302,6 +302,12 @@ To temporarily take manual control:
 3. Automatic control resumes after you return to "Auto" mode
 4. Learning continues even during manual override
 
+## Testing
+
+```
+source test-env/bin/activate && python -m pytest tests/ -v
+```
+
 ## Configuration Examples
 
 See [CONFIGURATION_EXAMPLES.md](docs/CONFIGURATION_EXAMPLES.md) for detailed examples of common setups.
