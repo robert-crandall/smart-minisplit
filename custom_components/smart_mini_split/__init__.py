@@ -15,6 +15,7 @@ except ImportError:
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "smart_mini_split"
+VERSION = "1.0.0"
 DEFAULT_WAIT_PERIOD_MINUTES = 5 # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
 DEFAULT_HEATING_THRESHOLD = 1.0 # Initiate heating when the actual temperature is this far below desired temperature
 DEFAULT_HEATING_OVERSHOOT = 1.5 # Stop heating when the actual temperature exceeds the desired temperature by this much

@@ -1,5 +1,9 @@
 # Smart Mini Split Controller for Home Assistant
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![GitHub release](https://img.shields.io/github/release/robert-crandall/smart-minisplit.svg)](https://github.com/robert-crandall/smart-minisplit/releases)
+[![License](https://img.shields.io/github/license/robert-crandall/smart-minisplit.svg)](LICENSE)
+
 A custom Home Assistant integration that intelligently manages a mini split heat/cool unit by comparing its internal set temperature against readings from an external thermometer.
 
 ## Features
@@ -11,9 +15,21 @@ A custom Home Assistant integration that intelligently manages a mini split heat
 
 ## Installation
 
+### HACS (Recommended)
+
+1. Open HACS in your Home Assistant instance
+2. Click on "Integrations"
+3. Click the three dots in the top right corner and select "Custom repositories"
+4. Add this repository URL: `https://github.com/robert-crandall/smart-minisplit`
+5. Select "Integration" as the category
+6. Click "Add"
+7. Find "Smart Mini Split Controller" in the list and click "Install"
+8. Restart Home Assistant
+
+### Manual Installation
+
 1. Copy the `custom_components/smart_mini_split` folder to your Home Assistant `custom_components` directory.
-2. Add the configuration to your `configuration.yaml` file (see below).
-3. Restart Home Assistant.
+2. Restart Home Assistant.
 
 ## Configuration
 
