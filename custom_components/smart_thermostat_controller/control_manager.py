@@ -32,11 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 class ControlManager:
     """Manages control logic for the smart thermostat."""
 
-    def __init__(self, hass: HomeAssistant, config: SmartThermosta            if old_switch_threshold != new_config.switch_threshold:
-                self._log_config_change(
-                    config_key="switch_threshold",
-                    old_value=old_switch_threshold,
-                    new_value=new_config.switch_threshold,ig) -> None:
+    def __init__(self, hass: HomeAssistant, config: SmartThermostatConfig) -> None:
         """Initialize the control manager."""
         self._hass = hass
         self._config = config
