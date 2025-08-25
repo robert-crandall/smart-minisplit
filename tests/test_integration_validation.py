@@ -70,6 +70,7 @@ class TestRequirement1Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -123,6 +124,7 @@ class TestRequirement1Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -178,6 +180,7 @@ class TestRequirement1Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -242,6 +245,7 @@ class TestRequirement1Validation:
                 coordinator._offset_confidence = 0.8
                 coordinator._last_mode_change = None
                 coordinator._manual_override = False
+                coordinator._away_mode = False
                 coordinator._store = MagicMock()
                 coordinator._store.async_load = AsyncMock(return_value=None)
                 coordinator._store.async_save = AsyncMock()
@@ -310,6 +314,7 @@ class TestRequirement2Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -361,6 +366,7 @@ class TestRequirement2Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -417,6 +423,7 @@ class TestRequirement2Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -472,6 +479,7 @@ class TestRequirement2Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -532,6 +540,7 @@ class TestRequirement3Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -588,6 +597,7 @@ class TestRequirement3Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -644,6 +654,7 @@ class TestRequirement3Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -700,6 +711,7 @@ class TestRequirement3Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -761,6 +773,7 @@ class TestRequirement4Validation:
             # Set recent mode change (2 minutes ago)
             coordinator._last_mode_change = dt_util.utcnow() - timedelta(seconds=120)
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -822,6 +835,7 @@ class TestRequirement4Validation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None  # No previous mode change (startup)
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()

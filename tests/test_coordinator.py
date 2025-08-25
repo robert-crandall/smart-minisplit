@@ -64,6 +64,7 @@ def coordinator(mock_hass, mock_config_entry):
         coord._offset_confidence = 0.0
         coord._last_mode_change = None
         coord._manual_override = False
+        coord._away_mode = False
         coord._store = MagicMock()
         coord._store.async_load = AsyncMock(return_value=None)
         coord._store.async_save = AsyncMock()

@@ -73,6 +73,7 @@ class TestDataUpdateFrequencyPerformance:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -245,6 +246,7 @@ class TestDataUpdateFrequencyPerformance:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -443,6 +445,7 @@ class TestMemoryUsageValidation:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
