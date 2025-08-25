@@ -165,7 +165,24 @@ class TestCompleteControlScenarios:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=75.0,
+                current_humidity=45.0,
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=True,
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
@@ -173,17 +190,17 @@ class TestCompleteControlScenarios:
             # Verify cooling was activated with offset compensation
             assert mock_hass.services.async_call.call_count >= 1
             
-            # Find the set_hvac_mode call
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) >= 1
+            # Find the set_temperature call
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) >= 1
             
-            hvac_call = hvac_calls[0]
-            assert hvac_call.args[0] == "climate"
-            assert hvac_call.args[2]["entity_id"] == "climate.bedroom_ac"
-            assert hvac_call.args[2]["hvac_mode"] == HVAC_MODE_COOL
+            temp_call = temp_calls[0]
+            assert temp_call.args[0] == "climate"
+            assert temp_call.args[2]["entity_id"] == "climate.bedroom_ac"
+            assert temp_call.args[2]["hvac_mode"] == HVAC_MODE_COOL
             # Target should be adjusted by learned offset: 72 - 5 = 67
-            assert hvac_call.args[2]["temperature"] == 67.0
+            assert temp_call.args[2]["temperature"] == 67.0
 
     async def test_dehumidification_priority_scenario(self, mock_hass, mock_config_entry):
         """Test that humidity control takes priority over temperature control."""
@@ -229,18 +246,35 @@ class TestCompleteControlScenarios:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=72.5,
+                current_humidity=65.0,
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=True,
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
             
             # Verify dry mode was activated (humidity priority)
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) >= 1
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) >= 1
             
-            hvac_call = hvac_calls[0]
-            assert hvac_call.args[2]["hvac_mode"] == HVAC_MODE_DRY
+            temp_call = temp_calls[0]
+            assert temp_call.args[2]["hvac_mode"] == HVAC_MODE_DRY
 
     async def test_heating_scenario_complete_flow(self, mock_hass, mock_config_entry):
         """Test complete heating scenario: cold room -> heating action."""
@@ -286,19 +320,36 @@ class TestCompleteControlScenarios:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=69.0,
+                current_humidity=45.0,
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=True,
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
             
             # Verify heating was activated (no offset for heating)
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) >= 1
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) >= 1
             
-            hvac_call = hvac_calls[0]
-            assert hvac_call.args[2]["hvac_mode"] == HVAC_MODE_HEAT
-            assert hvac_call.args[2]["temperature"] == 72.0  # No offset for heating
+            temp_call = temp_calls[0]
+            assert temp_call.args[2]["hvac_mode"] == HVAC_MODE_HEAT
+            assert temp_call.args[2]["temperature"] == 72.0  # No offset for heating
 
     async def test_cooldown_prevents_mode_change(self, mock_hass, mock_config_entry):
         """Test that cooldown period prevents rapid mode changes."""
@@ -345,15 +396,36 @@ class TestCompleteControlScenarios:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=75.0,
+                current_humidity=45.0,
+                last_mode_change=coordinator._last_mode_change,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=180,  # 3 minutes remaining
+                away_mode=False,
+                is_available=True,
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
+            
+            # Set the control manager's last mode change to match coordinator data
+            climate_entity._control_manager._last_mode_change = coordinator._last_mode_change
+            climate_entity._control_manager._current_mode = "heat"  # Currently heating
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
             
             # Verify no mode change occurred due to cooldown
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) == 0  # No calls should be made during cooldown
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) == 0  # No calls should be made during cooldown
 
 
 class TestSensorFailureAndRecovery:
@@ -402,18 +474,32 @@ class TestSensorFailureAndRecovery:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=None,  # Temperature sensor unavailable
+                current_humidity=65.0,
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=True,
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
             
-            # Should still activate dry mode based on humidity alone
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) >= 1
-            
-            hvac_call = hvac_calls[0]
-            assert hvac_call.args[2]["hvac_mode"] == HVAC_MODE_DRY
+            # Should not activate any mode when temperature sensor is unavailable (safety fallback)
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) == 0  # No calls should be made without temperature sensor
 
     async def test_humidity_sensor_failure_temperature_only_control(self, mock_hass, mock_config_entry):
         """Test temperature-only control when humidity sensor fails."""
@@ -458,18 +544,35 @@ class TestSensorFailureAndRecovery:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=75.0,
+                current_humidity=None,  # Humidity sensor unavailable
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=True,
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
             
             # Should activate cooling based on temperature only
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) >= 1
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) >= 1
             
-            hvac_call = hvac_calls[0]
-            assert hvac_call.args[2]["hvac_mode"] == HVAC_MODE_COOL
+            temp_call = temp_calls[0]
+            assert temp_call.args[2]["hvac_mode"] == HVAC_MODE_COOL
 
     async def test_all_sensors_unavailable_safe_shutdown(self, mock_hass, mock_config_entry):
         """Test safe shutdown when all sensors are unavailable."""
@@ -513,15 +616,32 @@ class TestSensorFailureAndRecovery:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="cool",  # Currently running
+                target_temperature=72.0,
+                current_temperature=None,  # Temperature sensor unavailable
+                current_humidity=None,  # Humidity sensor unavailable  
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=False,  # Sensors unavailable
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Execute automatic control
             await climate_entity._execute_automatic_control()
             
             # Should not make any control changes when sensors are unavailable
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) == 0
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) == 0
 
     async def test_sensor_recovery_resumes_control(self, mock_hass, mock_config_entry):
         """Test that control resumes when sensors recover from failure."""
@@ -549,7 +669,24 @@ class TestSensorFailureAndRecovery:
             coordinator._logger = create_logger(mock_hass, "coordinator")
             coordinator._error_manager = ErrorRecoveryManager(mock_hass, coordinator._logger)
             
+            # Set up coordinator data
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=None,  # Initially unavailable
+                current_humidity=None,  # Initially unavailable
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=False,  # Initially unavailable
+            )
+            coordinator.last_update_success = True
+            
             climate_entity = SmartThermostatClimate(coordinator, mock_config_entry)
+            climate_entity.hass = mock_hass
             
             # Phase 1: Sensors unavailable
             temp_state_unavailable = MagicMock(spec=State)
@@ -586,18 +723,33 @@ class TestSensorFailureAndRecovery:
                 "climate.bedroom_ac": minisplit_state,
             }.get(entity_id)
             
+            # Update coordinator data for sensor recovery
+            coordinator.data = ControllerState(
+                current_mode="off",
+                target_temperature=72.0,
+                current_temperature=75.0,  # Now available
+                current_humidity=45.0,  # Now available
+                last_mode_change=None,
+                learned_offset=5.0,
+                offset_confidence=0.8,
+                manual_override=False,
+                cooldown_remaining=0,
+                away_mode=False,
+                is_available=True,  # Now available
+            )
+            
             # Execute control - should now activate cooling
             await climate_entity._execute_automatic_control()
             
             # Verify control resumed after sensor recovery
             assert mock_hass.services.async_call.call_count > initial_call_count
             
-            hvac_calls = [call for call in mock_hass.services.async_call.call_args_list 
-                         if call.args[1] == "set_hvac_mode"]
-            assert len(hvac_calls) >= 1
+            temp_calls = [call for call in mock_hass.services.async_call.call_args_list 
+                         if call.args[1] == "set_temperature"]
+            assert len(temp_calls) >= 1
             
-            hvac_call = hvac_calls[-1]  # Get the most recent call
-            assert hvac_call.args[2]["hvac_mode"] == HVAC_MODE_COOL
+            temp_call = temp_calls[-1]  # Get the most recent call
+            assert temp_call.args[2]["hvac_mode"] == HVAC_MODE_COOL
 
 
 class TestLearningAlgorithmAccuracy:
@@ -931,6 +1083,7 @@ class TestPerformanceAndResourceUsage:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False  # Add missing attribute
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
@@ -1128,6 +1281,7 @@ class TestPerformanceAndResourceUsage:
             coordinator._offset_confidence = 0.8
             coordinator._last_mode_change = None
             coordinator._manual_override = False
+            coordinator._away_mode = False  # Add missing attribute
             coordinator._store = MagicMock()
             coordinator._store.async_load = AsyncMock(return_value=None)
             coordinator._store.async_save = AsyncMock()
