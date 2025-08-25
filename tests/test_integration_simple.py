@@ -108,7 +108,7 @@ class TestCompleteControlScenarios:
         assert action.action_type == HVAC_MODE_COOL
         assert action.target_temperature == 67.0  # 72 - 5 (learned offset)
         assert action.can_execute is True
-        assert "Temperature 75.0°F > target 72.0°F" in action.reason
+        assert "Temperature 75.0°F > normal cooling threshold" in action.reason
 
     async def test_dehumidification_priority_scenario(self, mock_hass, integration_config):
         """Test that humidity control takes priority over temperature control."""
@@ -143,7 +143,7 @@ class TestCompleteControlScenarios:
         
         # Verify dry mode was selected (humidity priority)
         assert action.action_type == HVAC_MODE_DRY
-        assert "Humidity 65.0% > 60.0%" in action.reason
+        assert "entering idle dry mode" in action.reason
 
     async def test_heating_scenario_complete_flow(self, mock_hass, integration_config):
         """Test complete heating scenario: cold room -> heating action."""
@@ -179,7 +179,7 @@ class TestCompleteControlScenarios:
         # Verify heating was selected (no offset for heating)
         assert action.action_type == HVAC_MODE_HEAT
         assert action.target_temperature == 72.0  # No offset for heating
-        assert "Temperature 69.0°F < target 72.0°F" in action.reason
+        assert "Temperature 69.0°F < normal heating threshold" in action.reason
 
     async def test_cooldown_prevents_mode_change(self, mock_hass, integration_config):
         """Test that cooldown period prevents rapid mode changes."""
@@ -256,9 +256,9 @@ class TestSensorFailureAndRecovery:
         # Execute control decision
         action = control_manager.calculate_required_action(sensor_readings, controller_state)
         
-        # Should still activate dry mode based on humidity alone
-        assert action.action_type == HVAC_MODE_DRY
-        assert "Humidity 65.0% > 60.0%" in action.reason
+        # Should turn off for safety when temperature sensor is unavailable
+        assert action.action_type == HVAC_MODE_OFF
+        assert "No temperature sensor available" in action.reason
 
     async def test_humidity_sensor_failure_temperature_only_control(self, mock_hass, integration_config):
         """Test temperature-only control when humidity sensor fails."""
@@ -294,7 +294,7 @@ class TestSensorFailureAndRecovery:
         # Should activate cooling based on temperature only
         assert action.action_type == HVAC_MODE_COOL
         assert action.target_temperature == 67.0  # With offset
-        assert "Temperature 75.0°F > target 72.0°F" in action.reason
+        assert "Temperature 75.0°F > normal cooling threshold" in action.reason
 
     async def test_all_sensors_unavailable_safe_shutdown(self, mock_hass, integration_config):
         """Test safe shutdown when all sensors are unavailable."""

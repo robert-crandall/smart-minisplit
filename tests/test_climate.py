@@ -53,6 +53,7 @@ def mock_config():
         away_mode_enabled=False,
         away_min_temperature=65.0,
         away_max_temperature=78.0,
+        switch_threshold=1.0,
     )
 
 
@@ -540,27 +541,17 @@ class TestSmartThermostatClimate:
         
         await climate_entity._set_minisplit_mode(HVAC_MODE_COOL, 68.0)
         
-        # Should call set_hvac_mode and set_temperature
-        assert mock_hass.services.async_call.call_count == 2
-        
-        # Check set_hvac_mode call - service data is passed as positional arg
-        hvac_call = mock_hass.services.async_call.call_args_list[0]
-        assert hvac_call.args[0] == "climate"
-        assert hvac_call.args[1] == "set_hvac_mode"
-        service_data = hvac_call.args[2]
-        assert service_data["entity_id"] == "climate.minisplit"
-        assert service_data["hvac_mode"] == HVAC_MODE_COOL
-        assert service_data["temperature"] == 68.0
-        assert hvac_call.kwargs["blocking"] is True
-        
-        # Check set_temperature call
-        temp_call = mock_hass.services.async_call.call_args_list[1]
-        assert temp_call.args[0] == "climate"
-        assert temp_call.args[1] == "set_temperature"
-        temp_service_data = temp_call.args[2]
-        assert temp_service_data["entity_id"] == "climate.minisplit"
-        assert temp_service_data["temperature"] == 68.0
-        assert temp_call.kwargs["blocking"] is True
+        # Should make one atomic call to set_temperature with mode
+        mock_hass.services.async_call.assert_called_once_with(
+            "climate",
+            "set_temperature",
+            {
+                "entity_id": "climate.minisplit",
+                "temperature": 68.0,
+                "hvac_mode": HVAC_MODE_COOL,
+            },
+            blocking=True,
+        )
 
     @pytest.mark.asyncio
     async def test_set_minisplit_mode_without_temperature(self, climate_entity):
@@ -571,10 +562,10 @@ class TestSmartThermostatClimate:
         
         await climate_entity._set_minisplit_mode(HVAC_MODE_DRY)
         
-        # Should only call set_hvac_mode
+        # Should call set_temperature with mode only (no temperature)
         mock_hass.services.async_call.assert_called_once_with(
             "climate",
-            "set_hvac_mode",
+            "set_temperature",
             {
                 "entity_id": "climate.minisplit",
                 "hvac_mode": HVAC_MODE_DRY,

@@ -46,6 +46,7 @@ def default_config():
         away_mode_enabled=False,
         away_min_temperature=65.0,
         away_max_temperature=78.0,
+        switch_threshold=1.0,
     )
 
 
@@ -137,7 +138,7 @@ class TestControlManager:
         # Heat should take priority over dry mode
         assert action.action_type == HVAC_MODE_HEAT
         assert action.target_temperature == default_controller_state.target_temperature
-        assert "Temperature 70.0°F < normal heating target" in action.reason
+        assert "Temperature 70.0°F < normal heating threshold" in action.reason
 
     def test_calculate_required_action_dry_mode_priority(
         self, control_manager, default_controller_state, valid_sensor_readings
@@ -182,7 +183,7 @@ class TestControlManager:
         assert action.action_type == HVAC_MODE_COOL
         # Should apply learned offset: 72 - 5 = 67
         assert action.target_temperature == 67.0
-        assert "Temperature 74.0°F > normal cooling target" in action.reason
+        assert "Temperature 74.0°F > normal cooling threshold" in action.reason
 
     def test_calculate_required_action_heating_needed(
         self, control_manager, default_controller_state, valid_sensor_readings
@@ -204,7 +205,7 @@ class TestControlManager:
         assert action.action_type == HVAC_MODE_HEAT
         # No offset applied for heating
         assert action.target_temperature == 72.0
-        assert "Temperature 70.0°F < normal heating target" in action.reason
+        assert "Temperature 70.0°F < normal heating threshold" in action.reason
 
     def test_calculate_required_action_within_deadband(
         self, control_manager, default_controller_state, valid_sensor_readings

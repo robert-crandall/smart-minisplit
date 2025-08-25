@@ -47,6 +47,7 @@ def mock_coordinator():
         away_mode_enabled=False,
         away_min_temperature=65.0,
         away_max_temperature=78.0,
+        switch_threshold=1.0,
     )
     coordinator.last_update_success = True
     coordinator.historical_data = []
