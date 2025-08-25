@@ -32,7 +32,11 @@ _LOGGER = logging.getLogger(__name__)
 class ControlManager:
     """Manages control logic for the smart thermostat."""
 
-    def __init__(self, hass: HomeAssistant, config: SmartThermostatConfig) -> None:
+    def __init__(self, hass: HomeAssistant, config: SmartThermosta            if old_switch_threshold != new_config.switch_threshold:
+                self._log_config_change(
+                    config_key="switch_threshold",
+                    old_value=old_switch_threshold,
+                    new_value=new_config.switch_threshold,ig) -> None:
         """Initialize the control manager."""
         self._hass = hass
         self._config = config
@@ -105,14 +109,20 @@ class ControlManager:
             # Determine effective temperature targets based on away mode
             heating_target, cooling_target = self._get_effective_temperature_targets(controller_state)
 
-            # Priority 1: Heating if needed
+            # Priority 1: Heating if needed (with stickiness to prevent mode switching)
             if (
                 sensor_readings.temperature_available
                 and sensor_readings.temperature is not None
             ):
-                temp_diff_heating = sensor_readings.temperature - heating_target
+                # Calculate heating threshold with switch threshold
+                # If currently in cooling mode, need extra switch threshold to switch to heating
+                heating_threshold = heating_target - self._config.temperature_deadband
+                if controller_state.current_mode in [HVAC_MODE_COOL, HVAC_MODE_DRY]:
+                    heating_threshold -= self._config.switch_threshold
                 
-                if temp_diff_heating < -self._config.temperature_deadband:
+                temp_diff_heating = sensor_readings.temperature - heating_threshold
+                
+                if temp_diff_heating < 0:  # Temperature below heating threshold
                     # Apply learned offset to target temperature for minisplit
                     adjusted_target = self._apply_learned_offset(
                         heating_target,
@@ -121,10 +131,11 @@ class ControlManager:
                     )
                     
                     reason_mode = "away" if controller_state.away_mode else "normal"
+                    switch_note = f" (switch threshold: {self._config.switch_threshold:.1f}°F)" if controller_state.current_mode in [HVAC_MODE_COOL, HVAC_MODE_DRY] else ""
                     action = ControlAction(
                         action_type=HVAC_MODE_HEAT,
                         target_temperature=adjusted_target,
-                        reason=f"Temperature {sensor_readings.temperature:.1f}°F < {reason_mode} heating target {heating_target:.1f}°F - deadband {self._config.temperature_deadband:.1f}°F",
+                        reason=f"Temperature {sensor_readings.temperature:.1f}°F < {reason_mode} heating threshold {heating_threshold:.1f}°F{switch_note}",
                         can_execute=can_execute,
                         cooldown_remaining=cooldown_remaining,
                     )
@@ -135,22 +146,31 @@ class ControlManager:
                         sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff_heating},
                         controller_state={
                             "heating_target": heating_target,
+                            "heating_threshold": heating_threshold,
                             "adjusted_target": adjusted_target,
                             "deadband": self._config.temperature_deadband,
+                            "switch_threshold": self._config.switch_threshold,
+                            "current_mode": controller_state.current_mode,
                             "away_mode": controller_state.away_mode
                         }
                     )
                     
                     return action
 
-            # Priority 2: Cooling if needed (with dry mode for high humidity)
+            # Priority 2: Cooling if needed (with dry mode for high humidity and stickiness)
             if (
                 sensor_readings.temperature_available
                 and sensor_readings.temperature is not None
             ):
-                temp_diff_cooling = sensor_readings.temperature - cooling_target
+                # Calculate cooling threshold with switch threshold
+                # If currently in heating mode, need extra switch threshold to switch to cooling
+                cooling_threshold = cooling_target + self._config.temperature_deadband
+                if controller_state.current_mode == HVAC_MODE_HEAT:
+                    cooling_threshold += self._config.switch_threshold
                 
-                if temp_diff_cooling > self._config.temperature_deadband:
+                temp_diff_cooling = sensor_readings.temperature - cooling_threshold
+                
+                if temp_diff_cooling > 0:  # Temperature above cooling threshold
                     # Check if humidity is high - use dry mode instead of cool
                     if (
                         sensor_readings.humidity_available
@@ -158,10 +178,11 @@ class ControlManager:
                         and sensor_readings.humidity > self._config.humidity_max_threshold
                     ):
                         reason_mode = "away" if controller_state.away_mode else "normal"
+                        switch_note = f" (switch threshold: {self._config.switch_threshold:.1f}°F)" if controller_state.current_mode == HVAC_MODE_HEAT else ""
                         action = ControlAction(
                             action_type=HVAC_MODE_DRY,
                             target_temperature=cooling_target,
-                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > {reason_mode} cooling target + deadband AND humidity {sensor_readings.humidity:.1f}% > {self._config.humidity_max_threshold:.1f}%",
+                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > {reason_mode} cooling threshold {cooling_threshold:.1f}°F AND humidity {sensor_readings.humidity:.1f}% > {self._config.humidity_max_threshold:.1f}%{switch_note}",
                             can_execute=can_execute,
                             cooldown_remaining=cooldown_remaining,
                         )
@@ -172,8 +193,11 @@ class ControlManager:
                             sensor_data={"temperature": sensor_readings.temperature, "humidity": sensor_readings.humidity, "temp_diff": temp_diff_cooling},
                             controller_state={
                                 "cooling_target": cooling_target,
+                                "cooling_threshold": cooling_threshold,
                                 "humidity_threshold": self._config.humidity_max_threshold,
                                 "deadband": self._config.temperature_deadband,
+                                "switch_threshold": self._config.switch_threshold,
+                                "current_mode": controller_state.current_mode,
                                 "away_mode": controller_state.away_mode
                             }
                         )
@@ -188,10 +212,11 @@ class ControlManager:
                         )
                         
                         reason_mode = "away" if controller_state.away_mode else "normal"
+                        switch_note = f" (switch threshold: {self._config.switch_threshold:.1f}°F)" if controller_state.current_mode == HVAC_MODE_HEAT else ""
                         action = ControlAction(
                             action_type=HVAC_MODE_COOL,
                             target_temperature=adjusted_target,
-                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > {reason_mode} cooling target {cooling_target:.1f}°F + deadband {self._config.temperature_deadband:.1f}°F",
+                            reason=f"Temperature {sensor_readings.temperature:.1f}°F > {reason_mode} cooling threshold {cooling_threshold:.1f}°F{switch_note}",
                             can_execute=can_execute,
                             cooldown_remaining=cooldown_remaining,
                         )
@@ -202,8 +227,11 @@ class ControlManager:
                             sensor_data={"temperature": sensor_readings.temperature, "temp_diff": temp_diff_cooling},
                             controller_state={
                                 "cooling_target": cooling_target,
+                                "cooling_threshold": cooling_threshold,
                                 "adjusted_target": adjusted_target,
                                 "deadband": self._config.temperature_deadband,
+                                "switch_threshold": self._config.switch_threshold,
+                                "current_mode": controller_state.current_mode,
                                 "away_mode": controller_state.away_mode
                             }
                         )
@@ -226,6 +254,7 @@ class ControlManager:
                     effective_target,
                     controller_state.learned_offset,
                     controller_state.current_mode,
+                    sensor_readings,
                 )
                 
                 reason_mode = "away" if controller_state.away_mode else "normal"
@@ -346,6 +375,7 @@ class ControlManager:
         target_temperature: float,
         learned_offset: float,
         current_mode: str,
+        sensor_readings: SensorReadings | None = None,
     ) -> tuple[str, float]:
         """
         Calculate the appropriate idle state mode and temperature.
@@ -354,42 +384,97 @@ class ControlManager:
         - Maintain air circulation for comfort
         - Reduce startup stress on equipment
         - Provide faster response when conditions change
+        - Minimize mode switching by preferring current mode when appropriate
         
         Args:
             current_temperature: Current room temperature
             target_temperature: Desired target temperature
             learned_offset: Learned offset for cooling mode
             current_mode: Current operating mode
+            sensor_readings: Current sensor readings for humidity check
             
         Returns:
             Tuple of (idle_mode, idle_target_temperature)
         """
-        # Determine which direction we're closer to needing
-        # This helps decide whether to idle in cooling or heating mode
+        # Priority 1: Stay in current mode when entering idle to reduce switching
+        # Only switch if the current mode doesn't make sense for conditions
         
-        # If current temperature is above target, lean toward cooling idle
+        if current_mode in [HVAC_MODE_COOL, HVAC_MODE_DRY]:
+            # Already in cooling-related mode - prefer to stay
+            if current_temperature >= target_temperature - 1.0:  # Within reasonable range for cooling
+                # Check if we should prefer dry mode for high humidity
+                if (current_mode == HVAC_MODE_COOL 
+                    and sensor_readings 
+                    and sensor_readings.humidity_available 
+                    and sensor_readings.humidity is not None
+                    and sensor_readings.humidity > self._config.humidity_max_threshold):
+                    # Switch to dry mode for high humidity
+                    idle_mode = HVAC_MODE_DRY
+                    idle_target = target_temperature
+                    _LOGGER.debug(
+                        "Idle dry mode: staying in dehumidification due to high humidity %.1f%% > %.1f%%",
+                        sensor_readings.humidity,
+                        self._config.humidity_max_threshold,
+                    )
+                else:
+                    # Stay in current cooling-related mode
+                    idle_mode = current_mode
+                    if current_mode == HVAC_MODE_DRY:
+                        idle_target = target_temperature
+                    else:
+                        idle_target = target_temperature - learned_offset + self._config.idle_temperature_offset
+                    _LOGGER.debug(
+                        "Idle %s: staying in current mode, target %.1f°F",
+                        idle_mode,
+                        idle_target,
+                    )
+                return idle_mode, idle_target
+                
+        elif current_mode == HVAC_MODE_HEAT:
+            # Already in heating mode - prefer to stay if reasonable
+            if current_temperature <= target_temperature + 1.0:  # Within reasonable range for heating
+                idle_target = target_temperature - self._config.idle_temperature_offset
+                idle_mode = HVAC_MODE_HEAT
+                _LOGGER.debug(
+                    "Idle heating: staying in current mode, target %.1f°F - idle_offset %.1f°F = %.1f°F",
+                    target_temperature,
+                    self._config.idle_temperature_offset,
+                    idle_target,
+                )
+                return idle_mode, idle_target
+        
+        # Priority 2: If current mode doesn't make sense, choose based on temperature
+        # This is fallback logic when we need to switch modes
+        
         if current_temperature >= target_temperature:
-            # Use cooling idle mode
-            # Set target to be (target - learned_offset + idle_offset)
-            # This keeps the unit running minimally in cooling mode
-            idle_target = target_temperature - learned_offset + self._config.idle_temperature_offset
-            idle_mode = HVAC_MODE_COOL
-            
-            _LOGGER.debug(
-                "Idle cooling: target %.1f°F - offset %.1f°F + idle_offset %.1f°F = %.1f°F",
-                target_temperature,
-                learned_offset,
-                self._config.idle_temperature_offset,
-                idle_target,
-            )
-            
+            # Temperature is at or above target - use cooling idle
+            # Check if humidity is high - prefer dry mode
+            if (sensor_readings 
+                and sensor_readings.humidity_available 
+                and sensor_readings.humidity is not None
+                and sensor_readings.humidity > self._config.humidity_max_threshold):
+                idle_mode = HVAC_MODE_DRY
+                idle_target = target_temperature
+                _LOGGER.debug(
+                    "Idle dry: high humidity %.1f%% > %.1f%%, target %.1f°F",
+                    sensor_readings.humidity,
+                    self._config.humidity_max_threshold,
+                    idle_target,
+                )
+            else:
+                idle_mode = HVAC_MODE_COOL
+                idle_target = target_temperature - learned_offset + self._config.idle_temperature_offset
+                _LOGGER.debug(
+                    "Idle cooling: target %.1f°F - offset %.1f°F + idle_offset %.1f°F = %.1f°F",
+                    target_temperature,
+                    learned_offset,
+                    self._config.idle_temperature_offset,
+                    idle_target,
+                )
         else:
-            # Use heating idle mode
-            # Set target to be (target - idle_offset)
-            # This keeps the unit running minimally in heating mode
+            # Temperature is below target - use heating idle
             idle_target = target_temperature - self._config.idle_temperature_offset
             idle_mode = HVAC_MODE_HEAT
-            
             _LOGGER.debug(
                 "Idle heating: target %.1f°F - idle_offset %.1f°F = %.1f°F",
                 target_temperature,
@@ -397,18 +482,63 @@ class ControlManager:
                 idle_target,
             )
         
-        # Prefer to continue in current mode if it makes sense for responsiveness
-        # This reduces mode switching when we're already in a good idle state
-        if current_mode == HVAC_MODE_COOL and current_temperature >= target_temperature - 0.5:
-            # Stay in cooling mode if we're close to or above target
-            idle_target = target_temperature - learned_offset + self._config.idle_temperature_offset
-            idle_mode = HVAC_MODE_COOL
-        elif current_mode == HVAC_MODE_HEAT and current_temperature <= target_temperature + 0.5:
-            # Stay in heating mode if we're close to or below target
-            idle_target = target_temperature - self._config.idle_temperature_offset
-            idle_mode = HVAC_MODE_HEAT
-        
         return idle_mode, idle_target
+
+    def _should_suppress_mode_change(
+        self,
+        current_mode: str,
+        proposed_mode: str,
+        current_temperature: float,
+        target_temperature: float,
+        humidity: float | None = None,
+    ) -> bool:
+        """
+        Determine if a mode change should be suppressed to reduce unnecessary switching.
+        
+        Args:
+            current_mode: Current HVAC mode
+            proposed_mode: Proposed new HVAC mode  
+            current_temperature: Current room temperature
+            target_temperature: Target temperature
+            humidity: Current humidity (if available)
+            
+        Returns:
+            True if mode change should be suppressed, False otherwise
+        """
+        # Don't suppress if modes are the same
+        if current_mode == proposed_mode:
+            return False
+            
+        # Don't suppress if current mode is off
+        if current_mode == HVAC_MODE_OFF:
+            return False
+            
+        # Check if the current mode is still reasonable for conditions
+        temp_diff = abs(current_temperature - target_temperature)
+        
+        # If temperature is very close to target (within 0.5°F), prefer to stay in current mode
+        if temp_diff <= 0.5:
+            _LOGGER.debug(
+                "Suppressing mode change from %s to %s: temperature %.1f°F is close to target %.1f°F",
+                current_mode,
+                proposed_mode,
+                current_temperature,
+                target_temperature
+            )
+            return True
+            
+        # Special case: if in dry mode and humidity is still high, stay in dry mode
+        if (current_mode == HVAC_MODE_DRY 
+            and humidity is not None 
+            and humidity > self._config.humidity_max_threshold - 5.0):  # 5% buffer
+            _LOGGER.debug(
+                "Suppressing mode change from dry to %s: humidity %.1f%% still elevated",
+                proposed_mode,
+                humidity
+            )
+            return True
+            
+        return False
 
     def _get_effective_temperature_targets(
         self,
@@ -669,6 +799,7 @@ class ControlManager:
             old_deadband = self._config.temperature_deadband
             old_humidity_max = self._config.humidity_max_threshold
             old_idle_offset = self._config.idle_temperature_offset
+            old_switch_threshold = self._config.switch_threshold
             
             self._config = new_config
             
@@ -705,6 +836,14 @@ class ControlManager:
                     changed_by="config_update"
                 )
                 
+            if old_switch_threshold != new_config.switch_threshold:
+                self._logger.log_config_change(
+                    config_key="switch_threshold",
+                    old_value=old_switch_threshold,
+                    new_value=new_config.switch_threshold,
+                    changed_by="config_update"
+                )
+                
         except Exception as err:
             self._logger.log_exception(
                 operation="update_config",
@@ -729,6 +868,7 @@ class ControlManager:
                 "temperature_deadband": self._config.temperature_deadband,
                 "humidity_max_threshold": self._config.humidity_max_threshold,
                 "idle_temperature_offset": self._config.idle_temperature_offset,
+                "switch_threshold": self._config.switch_threshold,
                 "error_summary": self._error_manager.get_error_summary() if hasattr(self, '_error_manager') else {},
             }
         except Exception as err:

@@ -25,6 +25,7 @@ class SmartThermostatConfig:
     away_mode_enabled: bool
     away_min_temperature: float
     away_max_temperature: float
+    switch_threshold: float
 
     @classmethod
     def from_config_entry(cls, config_data: dict[str, Any]) -> SmartThermostatConfig:
@@ -45,6 +46,7 @@ class SmartThermostatConfig:
             away_mode_enabled=config_data.get("away_mode_enabled", False),
             away_min_temperature=config_data.get("away_min_temperature", 65.0),
             away_max_temperature=config_data.get("away_max_temperature", 78.0),
+            switch_threshold=config_data.get("switch_threshold", 1.0),
         )
 
     def get_learning_config(self) -> LearningConfig:

@@ -36,6 +36,7 @@
           "learning_period_days": "Learning Period (days)",
           "default_cooling_offset": "Default Cooling Offset (°F)",
           "idle_temperature_offset": "Idle Temperature Offset (°F)",
+          "switch_threshold": "Switch Threshold (°F)",
           "away_mode_enabled": "Enable Away Mode",
           "away_min_temperature": "Away Minimum Temperature (°F)",
           "away_max_temperature": "Away Maximum Temperature (°F)"
@@ -79,6 +80,7 @@
           "learning_period_days": "Learning Period (days)",
           "default_cooling_offset": "Default Cooling Offset (°F)",
           "idle_temperature_offset": "Idle Temperature Offset (°F)",
+          "switch_threshold": "Switch Threshold (°F)",
           "away_mode_enabled": "Enable Away Mode",
           "away_min_temperature": "Away Minimum Temperature (°F)",
           "away_max_temperature": "Away Maximum Temperature (°F)"

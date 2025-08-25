@@ -22,6 +22,7 @@ CONF_IDLE_TEMPERATURE_OFFSET: Final = "idle_temperature_offset"
 CONF_AWAY_MODE_ENABLED: Final = "away_mode_enabled"
 CONF_AWAY_MIN_TEMPERATURE: Final = "away_min_temperature"
 CONF_AWAY_MAX_TEMPERATURE: Final = "away_max_temperature"
+CONF_SWITCH_THRESHOLD: Final = "switch_threshold"
 
 # Default values
 DEFAULT_TARGET_TEMPERATURE: Final = 72.0
@@ -36,6 +37,7 @@ DEFAULT_IDLE_TEMPERATURE_OFFSET: Final = 2.0  # Temperature offset for idle stat
 DEFAULT_AWAY_MODE_ENABLED: Final = False
 DEFAULT_AWAY_MIN_TEMPERATURE: Final = 65.0  # Minimum temperature when away
 DEFAULT_AWAY_MAX_TEMPERATURE: Final = 78.0  # Maximum temperature when away
+DEFAULT_SWITCH_THRESHOLD: Final = 1.0  # Extra degrees to prevent mode switching
 
 # Update intervals
 UPDATE_INTERVAL_SECONDS: Final = 30

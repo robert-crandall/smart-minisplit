@@ -26,6 +26,7 @@ from .const import (
     CONF_LEARNING_ENABLED,
     CONF_LEARNING_PERIOD_DAYS,
     CONF_MINISPLIT_ENTITY,
+    CONF_SWITCH_THRESHOLD,
     CONF_TARGET_TEMPERATURE,
     CONF_TEMPERATURE_DEADBAND,
     DEFAULT_AWAY_MAX_TEMPERATURE,
@@ -38,6 +39,7 @@ from .const import (
     DEFAULT_IDLE_TEMPERATURE_OFFSET,
     DEFAULT_LEARNING_ENABLED,
     DEFAULT_LEARNING_PERIOD_DAYS,
+    DEFAULT_SWITCH_THRESHOLD,
     DEFAULT_TARGET_TEMPERATURE,
     DEFAULT_TEMPERATURE_DEADBAND,
     DOMAIN,
@@ -209,6 +211,10 @@ class SmartThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_IDLE_TEMPERATURE_OFFSET, 
                 default=DEFAULT_IDLE_TEMPERATURE_OFFSET
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            vol.Required(
+                CONF_SWITCH_THRESHOLD, 
+                default=DEFAULT_SWITCH_THRESHOLD
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=3.0)),
             vol.Required(
                 CONF_AWAY_MODE_ENABLED, 
                 default=DEFAULT_AWAY_MODE_ENABLED
@@ -427,6 +433,10 @@ class SmartThermostatOptionsFlow(config_entries.OptionsFlow):
                 CONF_IDLE_TEMPERATURE_OFFSET,
                 default=current_data.get(CONF_IDLE_TEMPERATURE_OFFSET, DEFAULT_IDLE_TEMPERATURE_OFFSET)
             ): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=5.0)),
+            vol.Required(
+                CONF_SWITCH_THRESHOLD,
+                default=current_data.get(CONF_SWITCH_THRESHOLD, DEFAULT_SWITCH_THRESHOLD)
+            ): vol.All(vol.Coerce(float), vol.Range(min=0.0, max=3.0)),
             vol.Required(
                 CONF_AWAY_MODE_ENABLED,
                 default=current_data.get(CONF_AWAY_MODE_ENABLED, DEFAULT_AWAY_MODE_ENABLED)
