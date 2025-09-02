@@ -200,6 +200,14 @@ class MiniSplitController:
     def cooling_idle_temp(self) -> float | None:
         """Return the idle temperature for cooling."""
         # Internal temperature is often off by a few degrees. But want this close to the real cooling temperature to enforce drying.
+        internal_temp = self.get_climate_internal_temp()
+        external_temp = self.external_temperature()
+        desired_temp = self.cooling_desired_temp()
+
+        if internal_temp is not None and external_temp is not None and desired_temp is not None:
+            temp_diff = internal_temp - external_temp
+            return desired_temp + temp_diff - dry_mode_diff
+
         return self.cooling_desired_temp() + 4
 
     def needs_cooling(self, external_temp: float) -> bool:
@@ -224,6 +232,16 @@ class MiniSplitController:
             return True
         self.log_message(f"Cooling is not needed. Current={external_temp}, Desired={cooling_desired_temp}", "verbose")
 
+    def is_overcooled(self, current_mode: str = None, external_temp: float) -> bool:
+        """Check if the room is overcooled."""
+        if current_mode == "heat":
+            return False
+        heating_desired_temp = self.heating_desired_temp()
+        if external_temp < (heating_desired_temp + self.heating_overshoot):
+            self.log_message(f"Room is overcooled. Current={external_temp}, Desired={heating_desired_temp}", "info")
+            return True
+        return False
+
     def current_mode(self) -> str | None:
         """Return 'heat', 'cool', or None. Looks at the climate entity state."""
         climate_state = self.hass.states.get(self.climate_entity)
@@ -243,6 +261,18 @@ class MiniSplitController:
         if set_temp is not None:
             return set_temp
         self.log_message("Set temperature not available yet.", "warning")
+        return None
+
+    def get_climate_internal_temp(self) -> float | None:
+        """Return the current internal temperature from the climate entity."""
+        climate_state = self.hass.states.get(self.climate_entity)
+        if climate_state is None:
+            self.log_message("Climate entity not available yet.", "warning")
+            return None
+        internal_temp = climate_state.attributes.get("current_temperature")
+        if internal_temp is not None:
+            return internal_temp
+        self.log_message("Internal temperature not available yet.", "warning")
         return None
 
     def use_dry_mode(self) -> bool:
@@ -296,6 +326,13 @@ class MiniSplitController:
             idle_temperature = self.cooling_idle_temp()
         if idle_temperature is not None:
             await self.adjust_climate_setpoint(idle_temperature, mode=current_mode, message="enforcing idle mode")
+
+    async def enforce_safe_cooling_idle_mode(self) -> None:
+        """Room is overcooled, enforce a safe cooling idle mode by resetting the set temperature and turning off dry mode."""
+        # Determine last mode for reset
+        idle_temperature = self.cooling_idle_temp_value
+        if idle_temperature is not None:
+            await self.adjust_climate_setpoint(idle_temperature, mode="cool", message="enforcing safe cooling idle mode")
 
     def climate_is_active(
         self,
@@ -465,6 +502,10 @@ class MiniSplitController:
             if self.needs_cooling(external_temperature):
                 self.log_message(f"Needs cooling, current temperature={external_temperature}", "debug")
                 await self.adjust_climate_setpoint(self.cooling_active_temp, mode="cool")
+                return
+
+            if self.is_overcooled(current_mode=current_mode, external_temp=external_temperature):
+                await self.enforce_safe_cooling_idle_mode(current_mode=current_mode)
                 return
 
             # This is very noisy. Use it to confirm logs are working correctly.
