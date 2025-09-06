@@ -91,6 +91,15 @@ input_datetime:
 4. If a user manually changes the temperature to a value within the valid range, the integration uses this as the new set temperature.
 5. All actions are logged to the Home Assistant logbook for transparency.
 
+## Testing
+
+```
+python3 -m venv .venv
+source .venv/bin/activate  # or: . .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q
+```
+
 ## Notes
 
 - The integration assumes your mini split can be controlled via Home Assistant.
