@@ -21,7 +21,7 @@ def controller(fake_hass):
         heating_overshoot=DEFAULT_HEATING_OVERSHOOT,
         cooling_overshoot=DEFAULT_COOLING_OVERSHOOT,
         climate_entity="climate.test_minisplit",
-        external_temp_sensor="sensor.room_temp",
+        room_temp_sensor="sensor.room_temp",
         external_humidity_sensor="sensor.room_humidity",
     )
     # Default entity states
@@ -43,10 +43,13 @@ def test_numbers_are_close(controller):
 
 # ---------- Temperature & humidity acquisition ----------
 
-def test_room_actual_temp(controller, fake_hass):
-    assert controller.room_actual_temp() == 70.0
+def test_room_temp(controller, fake_hass):
+    # Manually refresh cached value
+    controller._update_room_temp()
+    assert controller.room_temp == 70.0
     fake_hass.states.set("sensor.room_temp", "bad")
-    assert controller.room_actual_temp() is None
+    controller._update_room_temp()
+    assert controller.room_temp is None
 
 
 def test_external_humidity(controller, fake_hass):
@@ -73,58 +76,100 @@ def test_cooling_desired_temp(controller, fake_hass):
 # ---------- Need heating / cooling logic ----------
 
 def test_needs_heating(controller, fake_hass):
-    # External temp below threshold triggers heating
-    assert controller.needs_heating(external_temp=66.5)  # threshold 1.0 below 68
-    # External temp above threshold doesn't trigger
-    assert not controller.needs_heating(external_temp=67.2)
+    # Set cached temp below threshold
+    fake_hass.states.set("sensor.room_temp", "66.5")
+    controller._update_room_temp()
+    assert controller.needs_heating()  # threshold 1.0 below 68
+    # Above threshold
+    fake_hass.states.set("sensor.room_temp", "67.2")
+    controller._update_room_temp()
+    assert not controller.needs_heating()
     # Disable heating
     fake_hass.states.set("input_boolean.heating_enabled", "off")
-    assert not controller.needs_heating(external_temp=60)
+    assert not controller.needs_heating()
 
 
 def test_needs_cooling(controller, fake_hass):
-    # External temp above threshold triggers cooling (74 + 1.5 = 75.5)
-    assert controller.needs_cooling(external_temp=76.0)
-    # External temp below threshold does not
-    assert not controller.needs_cooling(external_temp=75.0)
+    # Above threshold (74 + 1.5 = 75.5)
+    fake_hass.states.set("sensor.room_temp", "76.0")
+    controller._update_room_temp()
+    assert controller.needs_cooling()
+    # Below threshold
+    fake_hass.states.set("sensor.room_temp", "75.0")
+    controller._update_room_temp()
+    assert not controller.needs_cooling()
     # Disable cooling
     fake_hass.states.set("input_boolean.cooling_enabled", "off")
-    assert not controller.needs_cooling(external_temp=80.0)
+    assert not controller.needs_cooling()
 
 # ---------- Overcool and thresholds ----------
 
 def test_is_overcooled(controller, fake_hass):
-    # Setup heating desired lower for test
     fake_hass.states.set("input_number.heating_desired_temp", "66")
-    # external temp less than desired + overshoot triggers overcooled
-    assert controller.is_overcooled(current_mode="cool", external_temp=66.5)  # overshoot 1.5 -> 66 + 1.5 = 67.5
-    # Not overcooled at higher temp
-    assert not controller.is_overcooled(current_mode="cool", external_temp=69)
-    # If in heat mode, always False
-    assert not controller.is_overcooled(current_mode="heat", external_temp=60)
+    fake_hass.states.set("sensor.room_temp", "66.5")
+    controller._update_room_temp()
+    controller._update_climate_mode()
+    assert controller.is_overcooled()  # overshoot 1.5 -> 66 + 1.5 = 67.5
+    fake_hass.states.set("sensor.room_temp", "69")
+    controller._update_room_temp()
+    assert not controller.is_overcooled()
+    fake_hass.states.set("sensor.room_temp", "60")
+    controller._update_room_temp()
+    # Switch climate to heat to validate heat path
+    fake_hass.states.set("climate.test_minisplit", "heat", temperature=controller.heating_active_temp, current_temperature=60)
+    controller._update_climate_mode()
+    assert not controller.is_overcooled()
 
 
 def test_temperature_reached_threshold_heating(controller, fake_hass):
     fake_hass.states.set("input_number.heating_desired_temp", "66")
-    # At desired + overshoot triggers threshold reached
-    assert controller.temperature_reached_threshold(external_temp=67.6, current_mode="heat")
-    # Below threshold -> not reached
-    assert not controller.temperature_reached_threshold(external_temp=66.5, current_mode="heat")
+    fake_hass.states.set("sensor.room_temp", "67.6")
+    controller._update_room_temp()
+    fake_hass.states.set("climate.test_minisplit", "heat", temperature=controller.heating_active_temp, current_temperature=67.6)
+    controller._update_climate_mode()
+    assert controller.temperature_reached_threshold()
+    fake_hass.states.set("sensor.room_temp", "66.5")
+    controller._update_room_temp()
+    assert not controller.temperature_reached_threshold()
 
 
 def test_temperature_reached_threshold_cooling(controller, fake_hass):
     fake_hass.states.set("input_number.cooling_desired_temp", "74")
-    # At desired - overshoot triggers threshold (74 - 1.0 = 73.0)
-    assert controller.temperature_reached_threshold(external_temp=73.0, current_mode="cool")
-    # Above threshold -> not reached
-    assert not controller.temperature_reached_threshold(external_temp=73.5, current_mode="cool")
+    fake_hass.states.set("sensor.room_temp", "73.0")
+    controller._update_room_temp()
+    # Ensure climate mode is cool
+    fake_hass.states.set("climate.test_minisplit", "cool", temperature=controller.cooling_active_temp, current_temperature=73.0)
+    controller._update_climate_mode()
+    assert controller.temperature_reached_threshold()
+    fake_hass.states.set("sensor.room_temp", "73.5")
+    controller._update_room_temp()
+    assert not controller.temperature_reached_threshold()
 
 # ---------- Climate active ----------
 
-def test_climate_is_active(controller):
-    assert controller.climate_is_active(climate_setpoint=controller.heating_active_temp)
-    assert controller.climate_is_active(climate_setpoint=controller.cooling_active_temp)
-    assert not controller.climate_is_active(climate_setpoint=70)
+def test_climate_is_active(controller, fake_hass):
+    # Initial setpoint (74) is neither active heating (82) nor active cooling (60)
+    controller._update_climate_setpoint()
+    assert controller.climate_setpoint == 74
+    assert not controller.climate_is_active()
+
+    # Simulate active heating
+    fake_hass.states.set("climate.test_minisplit", "heat", temperature=controller.heating_active_temp, current_temperature=70)
+    controller._update_climate_setpoint()
+    assert controller.climate_setpoint == controller.heating_active_temp
+    assert controller.climate_is_active()
+
+    # Simulate active cooling
+    fake_hass.states.set("climate.test_minisplit", "cool", temperature=controller.cooling_active_temp, current_temperature=75)
+    controller._update_climate_setpoint()
+    assert controller.climate_setpoint == controller.cooling_active_temp
+    assert controller.climate_is_active()
+
+    # Back to an idle midpoint value
+    fake_hass.states.set("climate.test_minisplit", "cool", temperature=70, current_temperature=72)
+    controller._update_climate_setpoint()
+    assert controller.climate_setpoint == 70
+    assert not controller.climate_is_active()
 
 # ---------- Wait period ----------
 
