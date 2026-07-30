@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Range Thermostat",
+        "description": "Hold a room between two temperatures by flipping a single-setpoint minisplit between heat and cool.",
+        "data": {
+          "name": "Name",
+          "climate_entity": "Minisplit",
+          "sensor_entity": "Temperature sensor"
+        },
+        "data_description": {
+          "climate_entity": "The climate entity this thermostat will command.",
+          "sensor_entity": "The external sensor that governs the room temperature. The minisplit's own sensor is never used."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This minisplit already has a range thermostat."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Range Thermostat options",
+        "data": {
+          "deadband": "Deadband",
+          "min_cycle_duration": "Minimum cycle duration",
+          "overshoot": "Overshoot",
+          "sensor_timeout": "Sensor timeout",
+          "resend_interval": "Resend interval"
+        },
+        "data_description": {
+          "deadband": "How far outside the band the room must drift before a mode change is triggered. Applied symmetrically to both edges.",
+          "min_cycle_duration": "Minimum time between mode changes. Setpoint adjustments within the same mode are never delayed.",
+          "overshoot": "Pulls the commanded setpoint toward the middle of the band to buy coast time. Clamped at the midpoint.",
+          "sensor_timeout": "How long the temperature sensor may go without an update before the thermostat stops issuing commands.",
+          "resend_interval": "Re-send the current command this often to recover from dropped IR transmissions. 0 disables it."
+        }
+      }
+    }
+  }
+}

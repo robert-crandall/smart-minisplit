@@ -1,0 +1,11 @@
+{
+  "domain": "range_thermostat",
+  "name": "Range Thermostat",
+  "codeowners": ["@robert-crandall"],
+  "config_flow": true,
+  "documentation": "https://github.com/robert-crandall/smart-minisplit",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/robert-crandall/smart-minisplit/issues",
+  "requirements": [],
+  "version": "3.0.0"
+}

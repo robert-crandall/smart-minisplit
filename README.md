@@ -1,108 +1,146 @@
-# Smart Mini Split Controller for Home Assistant
+# Range Thermostat
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/release/robert-crandall/smart-minisplit.svg)](https://github.com/robert-crandall/smart-minisplit/releases)
-[![License](https://img.shields.io/github/license/robert-crandall/smart-minisplit.svg)](LICENSE)
+A Home Assistant custom integration that gives you a real "keep it between 70 and 72"
+thermostat on top of a minisplit that only understands one setpoint at a time.
 
-A custom Home Assistant integration that intelligently manages a mini split heat/cool unit by comparing its internal set temperature against readings from an external thermometer.
+It creates a virtual `climate` entity that wraps an existing minisplit `climate` entity plus
+an external temperature sensor, watches the sensor, and flips the minisplit between heat and
+cool to hold the room inside the band.
 
-## Features
+Built for a Tosot/Gree minisplit driven over IR by ESPHome (`heatpumpir`/`greeyac`), where the
+underlying entity is optimistic - commands are fire-and-forget with no confirmation. The
+control logic never trusts the minisplit's reported state or its internal sensor.
 
-- **External Temperature-Based Control:** Adjusts the mini split's set temperature up/down based on the difference between the external temperature reading and the target setpoint.
-- **Cooldown Timer:** Prevents frequent adjustments with a configurable cooldown period.
-- **Custom Heat Conditions:** Can start heating at a given difference, and heat until a threshold has been hit.
-- **Logbook Logging:** Logs all activities and decisions to the Home Assistant logbook.
+## What you get
 
-## Installation
+- A `climate` entity in `heat_cool` mode with a low and a high setpoint.
+- Works with the built-in thermostat card, which renders both handles for you.
+- Works with `climate.set_temperature`, scenes, and voice assistants with no adaptation.
+- `hvac_action` tells you whether it thinks the unit is heating, cooling, or idle.
+- `min_temp`, `max_temp` and `target_temperature_step` are inherited from the minisplit, so
+  the virtual entity can't accept a setpoint the real one would reject.
 
-### HACS (Recommended)
+## Install
 
-1. Open HACS in your Home Assistant instance
-2. Click on "Integrations"
-3. Click the three dots in the top right corner and select "Custom repositories"
-4. Add this repository URL: `https://github.com/robert-crandall/smart-minisplit`
-5. Select "Integration" as the category
-6. Click "Add"
-7. Find "Smart Mini Split Controller" in the list and click "Install"
-8. Restart Home Assistant
+Via HACS as a custom repository:
 
-### Manual Installation
+1. HACS -> three-dot menu -> Custom repositories.
+2. Add `https://github.com/robert-crandall/smart-minisplit`, category **Integration**.
+3. Install "Range Thermostat" and restart Home Assistant.
+4. Settings -> Devices & services -> Add integration -> Range Thermostat.
 
-1. Copy the `custom_components/smart_mini_split` folder to your Home Assistant `custom_components` directory.
-2. Restart Home Assistant.
+Or copy `custom_components/range_thermostat/` into your `config/custom_components/` and restart.
 
-## Configuration
+## Setup
 
-Add the following to your `configuration.yaml` file:
+| Field | What it is |
+|---|---|
+| Name | Friendly name for the virtual entity |
+| Minisplit | The `climate` entity this thermostat commands |
+| Temperature sensor | The external `sensor` that governs the room |
+
+One range thermostat per minisplit. Two would fight each other, so a second setup on the same
+climate entity is rejected.
+
+## Options
+
+All of these are editable from the integration's options and take effect immediately - no
+restart, and the mode-change cooldown keeps running across an edit.
+
+| Option | Default | What it does |
+|---|---|---|
+| `deadband` | 1.0 | How far outside the band the room has to drift before a mode change fires. Symmetric. |
+| `min_cycle_duration` | 15 min | Minimum time between mode changes. |
+| `overshoot` | 0.0 | Pulls the commanded setpoint toward the middle of the band to buy coast time. |
+| `sensor_timeout` | 15 min | How long the sensor may go quiet before the thermostat stops commanding. |
+| `resend_interval` | 0 | Re-send the current command this often, to recover from dropped IR frames. 0 disables it. |
+
+## How it decides
+
+With a band of `low`-`high`:
+
+- `T < low - deadband` -> command the minisplit to **heat** at `low + overshoot`
+- `T > high + deadband` -> command the minisplit to **cool** at `high - overshoot`
+- anything in between -> keep the current mode
+
+A mode change is blocked until `min_cycle_duration` has passed since the last one. A setpoint
+change within the same mode is never blocked.
+
+Three things that are deliberate:
+
+**It never turns the minisplit off to regulate.** A unit sitting in heat at 70 in a 74 degree
+room is already above its own setpoint and just idles. Powering it off would only add
+compressor cycles. `off` is sent only when you set the *virtual* thermostat to off.
+
+**There is no emergency override on the cooldown.** Bypassing the timer when the room is far
+outside the band reintroduces exactly the oscillation the timer exists to prevent.
+
+**It never falls back to the minisplit's internal sensor.** If the external sensor goes
+unavailable or stops updating for longer than `sensor_timeout`, the thermostat holds the
+current state, sets `sensor_stale: true`, logs once, and stops commanding. Silently changing
+which sensor governs the room is worse than doing nothing.
+
+The band is widened if it is ever narrower than `2 x deadband`, because a narrower band flips
+modes continuously. A warning is logged when that happens.
+
+`overshoot` is clamped so a commanded setpoint can never cross the middle of the band.
+
+### One command per change
+
+The thermostat tracks what it last sent and only calls a service when the mode or the setpoint
+actually changes. A mode change and its setpoint go out as a single `climate.set_temperature`
+call carrying `hvac_mode`, which ESPHome turns into one IR frame rather than two.
+
+## Attributes
+
+| Attribute | Description |
+|---|---|
+| `controlled_entity` | The minisplit being commanded |
+| `sensor_entity` | The external sensor |
+| `last_mode_change` | ISO timestamp of the last heat/cool flip |
+| `time_until_next_allowed_change` | Seconds left on the cooldown, 0 if none |
+| `commanded_setpoint` | What was last sent to the minisplit |
+| `sensor_stale` | Whether the sensor is currently unusable |
+
+## Example automation
 
 ```yaml
-smart_mini_split:
-  enabled: true # Set to false to disable
-  climate_entity: climate.minisplit  # Your mini split climate entity
-  external_temp_sensor: sensor.awair_element_110243_temperature  # Your external temperature sensor
-  external_humidify_sensor: sensor.awair_element_110243_humidity # Your external humidity sensor
-  heating_threshold: 1.0  # Initiate heating when the actual temperature is this far below desired temperature
-  heating_overshoot: 1.5  # Stop heating when the actual temperature exceeds the desired temperature by this much
-  cooling_threshold: 1.5  # Initiate cooling when the actual temperature is this far above desired temperature
-  cooling_overshoot: 1.0  # Not used currently. Stop cooling when the actual temperature is lower than the desired temperature by this much. Probably won't do anything because cooling sets the AC to desired_temperature.
-  wait_period_minutes: 5  # Minimum time between adjustments of the same mode (heat or cool). Adjustments between modes will wait 15 minutes.
-  log_level: debug  # 'info' or 'debug'
-
-input_boolean:
-  cooling_enabled:
-    name: Allow Cooling in the minisplit
-    icon: mdi:snowflake
-  heating_enabled:
-    name: Allow Heating in the minisplit
-    icon: mdi:flame
-
-input_number:
-  cooling_desired_temp:
-    name: Cooling Setpoint
-    min: 60
-    max: 80
-    step: 1
-    unit_of_measurement: "°F"
-    mode: slider
-  heating_desired_temp:
-    name: Heating Setpoint
-    min: 60
-    max: 80
-    step: 1
-    unit_of_measurement: "°F"
-    mode: slider
-
-input_datetime:
-  last_heating_event:
-    name: Last Heating Event
-    has_date: true
-    has_time: true
-  last_cooling_event:
-    name: Last Cooling Event
-    has_date: true
-    has_time: true
+automation:
+  - alias: "Night comfort band"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: climate.set_temperature
+        target:
+          entity_id: climate.bedroom_range
+        data:
+          target_temp_low: 66
+          target_temp_high: 68
 ```
 
-## How It Works
+## Notes and known edges
 
-1. The integration compares the external temperature sensor reading with the mini split's set temperature.
-2. If the difference exceeds the trigger threshold, it adjusts the mini split's temperature up to start the heat.
-3. When the external temperature reached the set temperature + reset threshold, it returns the minisplit's set temperature back to the starting point.
-4. If a user manually changes the temperature to a value within the valid range, the integration uses this as the new set temperature.
-5. All actions are logged to the Home Assistant logbook for transparency.
+- After a restart the band and on/off state are restored, but the cooldown is treated as
+  expired, so the first evaluation can act immediately.
+- Turning the virtual thermostat off and back on while the room is inside the band leaves the
+  minisplit off until the room actually drifts past a band edge. That's intended: there is
+  nothing to do while the room is comfortable.
+- The commanded setpoint is sent as calculated. If your unit only accepts whole degrees, it
+  rounds on its side.
 
-## Testing
+## Not included
 
+Presets, scheduling, window/presence detection, fan or swing passthrough, multi-sensor
+averaging, heat-only or cool-only modes, and any custom Lovelace card. Use automations and the
+built-in thermostat card.
+
+## Development
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest
 ```
-python3 -m venv .venv
-source .venv/bin/activate  # or: . .venv/bin/activate
-pip install -r requirements-dev.txt
-pytest -q
-```
 
-## Notes
-
-- The integration assumes your mini split can be controlled via Home Assistant.
-- Temperature values are in Fahrenheit.
-- The integration runs checks every minute.
-- Debug logging can be enabled for more detailed information.
+The test suite covers each of the design's acceptance criteria against a mock minisplit that
+behaves like the ESPHome climate entity.
