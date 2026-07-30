@@ -1,4 +1,7 @@
-notes.md
+__pycache__/
+*.pyc
 .coverage
-**/__pycache__/
-custom_components/smart_mini_split/backup.py
+.pytest_cache/
+.venv/
+notes.md
+.ruff_cache/

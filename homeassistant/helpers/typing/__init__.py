@@ -1,1 +1,0 @@
-ConfigType = dict
