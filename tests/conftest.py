@@ -52,8 +52,10 @@ class Command:
 class MockMinisplit(ClimateEntity):
     """A single-setpoint climate entity that records what it is told to do.
 
-    Modelled on an IR-driven unit: optimistic, no feedback, and it honours
-    ``hvac_mode`` passed into ``set_temperature`` the way ESPHome does.
+    Defaults to the common case: a platform that ignores ``hvac_mode`` passed
+    into ``set_temperature``. Home Assistant forwards that kwarg without
+    dispatching ``async_set_hvac_mode``, and most platforms drop it on the
+    floor, so a thermostat that relies on it would never change mode here.
     """
 
     _attr_name = "Minisplit"
@@ -65,6 +67,9 @@ class MockMinisplit(ClimateEntity):
     _attr_min_temp = 60
     _attr_max_temp = 86
     _attr_target_temperature_step = 1
+
+    #: Whether ``async_set_temperature`` acts on a ``hvac_mode`` kwarg.
+    honours_hvac_mode = False
 
     def __init__(self) -> None:
         """Start powered off."""
@@ -78,16 +83,27 @@ class MockMinisplit(ClimateEntity):
         """Return whether the unit is reachable."""
         return self._available
 
+    @property
+    def settled(self) -> Command | None:
+        """The state the unit was driven to, or None if nothing was sent.
+
+        A mode change is normally two service calls, so the individual entries
+        in ``commands`` include a transient. This is the net result.
+        """
+        if not self.commands:
+            return None
+        return Command(self._attr_hvac_mode, self._attr_target_temperature)
+
     def set_available(self, available: bool) -> None:
         """Flip availability and push the new state."""
         self._available = available
         self.async_write_ha_state()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Record a setpoint, and a mode when one rides along."""
+        """Record a setpoint, and a mode only if this platform honours one."""
         hvac_mode = kwargs.get("hvac_mode")
         temperature = kwargs.get(ATTR_TEMPERATURE)
-        if hvac_mode is not None:
+        if hvac_mode is not None and self.honours_hvac_mode:
             self._attr_hvac_mode = HVACMode(hvac_mode)
         if temperature is not None:
             self._attr_target_temperature = temperature
@@ -101,6 +117,12 @@ class MockMinisplit(ClimateEntity):
         self.async_write_ha_state()
 
 
+class ESPHomeStyleMinisplit(MockMinisplit):
+    """An IR bridge that folds ``hvac_mode`` into one command, as ESPHome does."""
+
+    honours_hvac_mode = True
+
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Load custom_components/ during tests."""
@@ -108,9 +130,14 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 
 
 @pytest.fixture
-def minisplit() -> MockMinisplit:
-    """Return the fake underlying unit."""
-    return MockMinisplit()
+def minisplit(request) -> MockMinisplit:
+    """Return the fake underlying unit.
+
+    Parametrize indirectly to swap in a different platform flavour, e.g.
+    ``@pytest.mark.parametrize("minisplit", [ESPHomeStyleMinisplit], indirect=True)``.
+    """
+    cls = getattr(request, "param", MockMinisplit)
+    return cls()
 
 
 @pytest.fixture

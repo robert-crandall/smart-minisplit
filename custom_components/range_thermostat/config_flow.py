@@ -22,11 +22,13 @@ from .const import (
     CONF_RESEND_INTERVAL,
     CONF_SENSOR_ENTITY,
     CONF_SENSOR_TIMEOUT,
+    CONF_SINGLE_COMMAND,
     DEFAULT_DEADBAND,
     DEFAULT_MIN_CYCLE_DURATION,
     DEFAULT_OVERSHOOT,
     DEFAULT_RESEND_INTERVAL,
     DEFAULT_SENSOR_TIMEOUT,
+    DEFAULT_SINGLE_COMMAND,
     DOMAIN,
 )
 
@@ -126,6 +128,10 @@ class RangeThermostatOptionsFlow(OptionsFlow):
                     CONF_RESEND_INTERVAL,
                     default=options.get(CONF_RESEND_INTERVAL, DEFAULT_RESEND_INTERVAL),
                 ): _minutes(0, 240),
+                vol.Required(
+                    CONF_SINGLE_COMMAND,
+                    default=options.get(CONF_SINGLE_COMMAND, DEFAULT_SINGLE_COMMAND),
+                ): selector.BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

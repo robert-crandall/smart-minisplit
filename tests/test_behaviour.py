@@ -34,10 +34,17 @@ from custom_components.range_thermostat.const import (
     CONF_RESEND_INTERVAL,
     CONF_SENSOR_ENTITY,
     CONF_SENSOR_TIMEOUT,
+    CONF_SINGLE_COMMAND,
     DOMAIN,
 )
 
-from .conftest import CLIMATE_ENTITY, SENSOR_ENTITY, THERMOSTAT, Command
+from .conftest import (
+    CLIMATE_ENTITY,
+    SENSOR_ENTITY,
+    THERMOSTAT,
+    Command,
+    ESPHomeStyleMinisplit,
+)
 from .test_acceptance import NO_SENSOR_TIMEOUT, advance, set_band
 
 
@@ -51,7 +58,7 @@ async def test_overshoot_pulls_the_setpoint_inward(
     set_sensor(68.5)
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.5)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.5)
 
 
 async def test_overshoot_is_clamped_at_the_midpoint(
@@ -64,7 +71,7 @@ async def test_overshoot_is_clamped_at_the_midpoint(
     set_sensor(74.0)
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.COOL, 71.0)]
+    assert minisplit.settled == Command(HVACMode.COOL, 71.0)
 
 
 async def test_resend_reasserts_the_same_command(
@@ -75,14 +82,17 @@ async def test_resend_reasserts_the_same_command(
     await set_band(hass, 70, 72)
     set_sensor(68.5)
     await hass.async_block_till_done()
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
     await advance(hass, freezer, 5, set_sensor, 68.5)
 
-    assert minisplit.commands == [
+    # The resend re-asserts the mode too, so a dropped IR frame that left the
+    # unit in the wrong mode gets corrected, not just the setpoint.
+    assert minisplit.commands[-2:] == [
         Command(HVACMode.HEAT, 70.0),
-        Command(HVACMode.HEAT, 70.0),
+        Command(HVACMode.HEAT, None),
     ]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
 
 async def test_resend_disabled_by_default(
@@ -119,7 +129,7 @@ async def test_unavailable_minisplit_is_retried(
     set_sensor(68.4)
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
 
 async def test_options_apply_without_a_restart(
@@ -135,7 +145,7 @@ async def test_options_apply_without_a_restart(
     hass.config_entries.async_update_entry(entry, options={CONF_DEADBAND: 0.1})
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
 
 async def test_options_update_keeps_the_cooldown(
@@ -174,7 +184,7 @@ async def test_turning_back_on_can_act_immediately(
         )
         await hass.async_block_till_done()
 
-    assert minisplit.commands[-1] == Command(HVACMode.HEAT, 70.0)
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
     assert (
         hass.states.get(THERMOSTAT).attributes[ATTR_HVAC_ACTION] == HVACAction.HEATING
     )
@@ -217,7 +227,7 @@ async def test_celsius_sensor_is_converted(
     )
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
     assert hass.states.get(THERMOSTAT).attributes["current_temperature"] == 68
 
 
@@ -357,3 +367,79 @@ async def test_repeated_identical_readings_are_not_stale(
         await hass.async_block_till_done()
 
     assert hass.states.get(THERMOSTAT).attributes["sensor_stale"] is False
+
+
+# ----------------------------------------------------------------------
+# How a mode change is put on the wire
+# ----------------------------------------------------------------------
+
+
+async def test_mode_change_is_two_calls_by_default(
+    hass, setup_thermostat, minisplit, set_sensor
+):
+    """Setpoint then mode, so it works on platforms that ignore hvac_mode.
+
+    Home Assistant forwards ``hvac_mode`` into ``async_set_temperature``
+    without dispatching ``async_set_hvac_mode``, and most climate platforms
+    ignore the kwarg. The default mock is one of those, so a single combined
+    call would leave the unit off.
+    """
+    await setup_thermostat(70.0)
+    await set_band(hass, 70, 72)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+
+    # Setpoint lands first, while the unit is still off; then the mode.
+    assert minisplit.commands == [
+        Command(HVACMode.OFF, 70.0),
+        Command(HVACMode.HEAT, None),
+    ]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
+
+
+async def test_setpoint_change_within_a_mode_is_one_call(
+    hass, setup_thermostat, minisplit, set_sensor
+):
+    """No mode flip means no set_hvac_mode call."""
+    await setup_thermostat(70.0)
+    await set_band(hass, 70, 72)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+    minisplit.commands.clear()
+
+    await set_band(hass, 66, 72)
+    await hass.async_block_till_done()
+
+    assert minisplit.commands == [Command(HVACMode.HEAT, 66.0)]
+
+
+@pytest.mark.parametrize("minisplit", [ESPHomeStyleMinisplit], indirect=True)
+async def test_single_command_option_sends_one_call(
+    hass, setup_thermostat, minisplit, set_sensor
+):
+    """ESPHome honours hvac_mode inside set_temperature -- one call, one IR frame."""
+    await setup_thermostat(70.0, **{CONF_SINGLE_COMMAND: True})
+    await set_band(hass, 70, 72)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+
+    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
+
+
+async def test_single_command_would_strand_a_platform_that_ignores_hvac_mode(
+    hass, setup_thermostat, minisplit, set_sensor
+):
+    """Why two calls is the default.
+
+    Turning the option on against a platform that drops ``hvac_mode`` gets the
+    setpoint applied and the mode silently ignored, so the unit never starts
+    heating. This is the failure mode the default avoids.
+    """
+    await setup_thermostat(70.0, **{CONF_SINGLE_COMMAND: True})
+    await set_band(hass, 70, 72)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+
+    assert minisplit.target_temperature == 70.0
+    assert minisplit.hvac_mode == HVACMode.OFF

@@ -7,9 +7,10 @@ It creates a virtual `climate` entity that wraps an existing minisplit `climate`
 an external temperature sensor, watches the sensor, and flips the minisplit between heat and
 cool to hold the room inside the band.
 
-Built for a Tosot/Gree minisplit driven over IR by ESPHome (`heatpumpir`/`greeyac`), where the
-underlying entity is optimistic - commands are fire-and-forget with no confirmation. The
-control logic never trusts the minisplit's reported state or its internal sensor.
+Works with any single-setpoint `climate` entity - a wifi integration like `gree`, or a
+minisplit driven over IR by ESPHome (`heatpumpir`/`greeyac`). The control logic never trusts
+the minisplit's reported state or its internal sensor, so an optimistic fire-and-forget IR
+entity is fine.
 
 ## What you get
 
@@ -54,6 +55,7 @@ restart, and the mode-change cooldown keeps running across an edit.
 | `overshoot` | 0.0 | Pulls the commanded setpoint toward the middle of the band to buy coast time. |
 | `sensor_timeout` | 15 min | How long the sensor may go quiet before the thermostat stops commanding. |
 | `resend_interval` | 0 | Re-send the current command this often, to recover from dropped IR frames. 0 disables it. |
+| `single_command` | off | Send a mode change as one `set_temperature` call carrying `hvac_mode`. Only for ESPHome. See below. |
 
 ## How it decides
 
@@ -88,8 +90,24 @@ modes continuously. A warning is logged when that happens.
 ### One command per change
 
 The thermostat tracks what it last sent and only calls a service when the mode or the setpoint
-actually changes. A mode change and its setpoint go out as a single `climate.set_temperature`
-call carrying `hvac_mode`, which ESPHome turns into one IR frame rather than two.
+actually changes.
+
+A mode change goes out as two service calls: `climate.set_temperature` for the setpoint, then
+`climate.set_hvac_mode`. Setpoint-only changes are a single call.
+
+Two calls rather than one is deliberate. Home Assistant lets you pass `hvac_mode` to
+`climate.set_temperature`, but core does **not** dispatch `async_set_hvac_mode` for you - it
+forwards the kwarg and leaves each platform to handle it, and most don't. Only 29 of the 108
+climate platforms in core even reference it. On the other 79 a combined call would set the
+temperature and silently ignore the mode, so the unit would never start heating or cooling.
+
+The setpoint is sent first on purpose. A unit briefly left in the old mode at the new setpoint
+just idles, whereas the old setpoint under the new mode would run the wrong direction until
+the second call lands.
+
+Set `single_command` to fold a mode change back into one call. ESPHome does honour `hvac_mode`
+inside `set_temperature` and turns it into a single IR frame, so if that's your setup this
+halves the IR traffic and the beeping. Leave it off for anything else.
 
 ## Attributes
 
@@ -143,4 +161,5 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 The test suite covers each of the design's acceptance criteria against a mock minisplit that
-behaves like the ESPHome climate entity.
+ignores `hvac_mode` inside `set_temperature`, like most real integrations. A second mock
+models the ESPHome behaviour and covers the `single_command` path.

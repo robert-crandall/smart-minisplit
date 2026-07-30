@@ -68,6 +68,7 @@ from .const import (
     CONF_RESEND_INTERVAL,
     CONF_SENSOR_ENTITY,
     CONF_SENSOR_TIMEOUT,
+    CONF_SINGLE_COMMAND,
     DEFAULT_BAND_CELSIUS,
     DEFAULT_BAND_FAHRENHEIT,
     DEFAULT_DEADBAND,
@@ -75,6 +76,7 @@ from .const import (
     DEFAULT_OVERSHOOT,
     DEFAULT_RESEND_INTERVAL,
     DEFAULT_SENSOR_TIMEOUT,
+    DEFAULT_SINGLE_COMMAND,
     SAFETY_TICK,
 )
 
@@ -153,6 +155,9 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
         )
         self._resend_interval = float(
             options.get(CONF_RESEND_INTERVAL, DEFAULT_RESEND_INTERVAL)
+        )
+        self._single_command = bool(
+            options.get(CONF_SINGLE_COMMAND, DEFAULT_SINGLE_COMMAND)
         )
 
     @property
@@ -566,7 +571,7 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
             # Same mode: setpoint adjustments are never blocked by the cooldown.
             await self._async_send(mode, setpoint)
         elif self._resend_due(now):
-            await self._async_send(mode, setpoint)
+            await self._async_send(mode, setpoint, force_mode=True)
 
     def _resend_due(self, now: datetime) -> bool:
         """Return True when the current command should be re-asserted."""
@@ -604,8 +609,21 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
         self._last_commanded_setpoint = None
         self._last_command_at = now
 
-    async def _async_send(self, mode: HVACMode, setpoint: float) -> bool:
-        """Send mode and setpoint as a single service call. Return True on success."""
+    async def _async_send(
+        self, mode: HVACMode, setpoint: float, *, force_mode: bool = False
+    ) -> bool:
+        """Bring the underlying unit to ``mode`` @ ``setpoint``.
+
+        Home Assistant does not dispatch ``async_set_hvac_mode`` when
+        ``hvac_mode`` rides along with ``climate.set_temperature``; it just
+        forwards the kwarg and leaves it to the platform, and most platforms
+        ignore it. So mode and setpoint go as two separate service calls, which
+        every platform understands. ``single_command`` folds them back into one
+        for platforms that do honour it -- notably ESPHome, where a second call
+        means a second IR frame.
+
+        Return True when the unit is now in the requested state.
+        """
         if not self._underlying_available():
             _LOGGER.debug(
                 "%s: %s is unavailable, skipping command",
@@ -613,28 +631,46 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
                 self._climate_entity_id,
             )
             return False
-        try:
-            await self.hass.services.async_call(
-                CLIMATE_DOMAIN,
+
+        send_mode = force_mode or mode is not self._last_commanded_mode
+        now = dt_util.utcnow()
+
+        if send_mode and self._single_command:
+            if not await self._async_call(
                 SERVICE_SET_TEMPERATURE,
-                {
-                    ATTR_ENTITY_ID: self._climate_entity_id,
-                    ATTR_HVAC_MODE: mode,
-                    ATTR_TEMPERATURE: setpoint,
-                },
-                blocking=True,
-                context=self._context,
-            )
-        except HomeAssistantError as err:
-            _LOGGER.error(
-                "%s: failed to command %s to %s @ %s: %s",
+                {ATTR_HVAC_MODE: mode, ATTR_TEMPERATURE: setpoint},
+                mode,
+                setpoint,
+            ):
+                return False
+            self._last_commanded_mode = mode
+            self._last_commanded_setpoint = setpoint
+            self._last_command_at = now
+            _LOGGER.debug(
+                "%s: commanded %s to %s @ %s",
                 self.entity_id,
                 self._climate_entity_id,
                 mode,
                 setpoint,
-                err,
             )
+            return True
+
+        # Setpoint first. A unit briefly left in the old mode at the new
+        # setpoint idles; the old setpoint under the new mode would run the
+        # wrong direction until the second call lands.
+        if not await self._async_call(
+            SERVICE_SET_TEMPERATURE, {ATTR_TEMPERATURE: setpoint}, mode, setpoint
+        ):
             return False
+        self._last_commanded_setpoint = setpoint
+        self._last_command_at = now
+
+        if send_mode:
+            if not await self._async_call(
+                SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: mode}, mode, setpoint
+            ):
+                return False
+            self._last_commanded_mode = mode
 
         _LOGGER.debug(
             "%s: commanded %s to %s @ %s",
@@ -643,9 +679,35 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
             mode,
             setpoint,
         )
-        self._last_commanded_mode = mode
-        self._last_commanded_setpoint = setpoint
-        self._last_command_at = dt_util.utcnow()
+        return True
+
+    async def _async_call(
+        self,
+        service: str,
+        data: dict[str, Any],
+        mode: HVACMode,
+        setpoint: float,
+    ) -> bool:
+        """Call one climate service on the underlying entity."""
+        try:
+            await self.hass.services.async_call(
+                CLIMATE_DOMAIN,
+                service,
+                {ATTR_ENTITY_ID: self._climate_entity_id, **data},
+                blocking=True,
+                context=self._context,
+            )
+        except HomeAssistantError as err:
+            _LOGGER.error(
+                "%s: failed to command %s to %s @ %s via %s: %s",
+                self.entity_id,
+                self._climate_entity_id,
+                mode,
+                setpoint,
+                service,
+                err,
+            )
+            return False
         return True
 
     def _underlying_available(self) -> bool:
