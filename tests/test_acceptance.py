@@ -75,7 +75,7 @@ async def test_1_below_band_commands_heat(
     set_sensor(68.5)
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
     state = hass.states.get(THERMOSTAT)
     assert state.attributes[ATTR_HVAC_ACTION] == HVACAction.HEATING
     assert state.attributes[ATTR_COMMANDED_SETPOINT] == 70.0
@@ -115,7 +115,7 @@ async def test_3_above_band_commands_cool(
 
     await advance(hass, freezer, 16, set_sensor, 74.0)
 
-    assert minisplit.commands == [Command(HVACMode.COOL, 72.0)]
+    assert minisplit.settled == Command(HVACMode.COOL, 72.0)
     assert (
         hass.states.get(THERMOSTAT).attributes[ATTR_HVAC_ACTION] == HVACAction.COOLING
     )
@@ -154,7 +154,7 @@ async def test_5_mode_change_after_cooldown(
 
     await advance(hass, freezer, 11, set_sensor, 68.5)
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
     # The flip restarts the cooldown.
     assert (
         hass.states.get(THERMOSTAT).attributes[ATTR_TIME_UNTIL_NEXT_ALLOWED_CHANGE] > 0
@@ -175,7 +175,7 @@ async def test_6_same_mode_setpoint_change_ignores_cooldown(
     # Still well inside the cooldown.
     await set_band(hass, 66, 68)
 
-    assert minisplit.commands == [Command(HVACMode.COOL, 68.0)]
+    assert minisplit.settled == Command(HVACMode.COOL, 68.0)
     assert (
         hass.states.get(THERMOSTAT).attributes[ATTR_TIME_UNTIL_NEXT_ALLOWED_CHANGE] > 0
     )
@@ -259,7 +259,7 @@ async def test_8_restart_restores_band_and_mode(
     assert state.attributes[ATTR_TARGET_TEMP_LOW] == 66.0
     assert state.attributes[ATTR_TARGET_TEMP_HIGH] == 68.0
     # Cooldown is treated as expired, so the first evaluation may command straight away.
-    assert minisplit.commands == [Command(HVACMode.HEAT, 66.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 66.0)
 
 
 async def test_9_narrow_band_is_widened(hass, setup_thermostat, caplog):
@@ -292,7 +292,7 @@ async def test_10_identical_evaluations_issue_one_command(
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
 
-    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
 
 async def test_off_is_only_commanded_by_the_user(

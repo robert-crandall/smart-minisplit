@@ -28,14 +28,16 @@
           "min_cycle_duration": "Minimum cycle duration",
           "overshoot": "Overshoot",
           "sensor_timeout": "Sensor timeout",
-          "resend_interval": "Resend interval"
+          "resend_interval": "Resend interval",
+          "single_command": "Combine mode and setpoint into one command"
         },
         "data_description": {
           "deadband": "How far outside the band the room must drift before a mode change is triggered. Applied symmetrically to both edges.",
           "min_cycle_duration": "Minimum time between mode changes. Setpoint adjustments within the same mode are never delayed.",
           "overshoot": "Pulls the commanded setpoint toward the middle of the band to buy coast time. Clamped at the midpoint.",
           "sensor_timeout": "How long the temperature sensor may go without an update before the thermostat stops issuing commands.",
-          "resend_interval": "Re-send the current command this often to recover from dropped IR transmissions. 0 disables it."
+          "resend_interval": "Re-send the current command this often to recover from dropped IR transmissions. 0 disables it.",
+          "single_command": "Send a mode change as a single climate.set_temperature call carrying hvac_mode, instead of two separate calls. Only enable this if the underlying integration honours hvac_mode inside set_temperature - ESPHome does, and folds it into one IR frame, but most integrations silently ignore it and would never change mode."
         }
       }
     }

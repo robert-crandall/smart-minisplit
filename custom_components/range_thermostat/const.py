@@ -16,12 +16,18 @@ CONF_MIN_CYCLE_DURATION = "min_cycle_duration"
 CONF_OVERSHOOT = "overshoot"
 CONF_SENSOR_TIMEOUT = "sensor_timeout"
 CONF_RESEND_INTERVAL = "resend_interval"
+CONF_SINGLE_COMMAND = "single_command"
 
 DEFAULT_DEADBAND = 1.0
 DEFAULT_MIN_CYCLE_DURATION = 15  # minutes
 DEFAULT_OVERSHOOT = 0.0
 DEFAULT_SENSOR_TIMEOUT = 15  # minutes
 DEFAULT_RESEND_INTERVAL = 0  # minutes, 0 disables re-assertion
+# Home Assistant does not dispatch async_set_hvac_mode when hvac_mode rides
+# along with climate.set_temperature -- each platform has to read it out of the
+# kwargs itself, and most do not. Two separate calls work everywhere, so that is
+# the default; ESPHome-backed IR units can opt into one call (one IR frame).
+DEFAULT_SINGLE_COMMAND = False
 
 # Periodic safety evaluation, independent of sensor updates.
 SAFETY_TICK = timedelta(minutes=5)
