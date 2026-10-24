@@ -539,6 +539,12 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
         else:
             # Inside the band: hold whatever the unit is already doing.
             desired = self._state
+            if desired is HVACAction.IDLE and self._last_commanded_setpoint is None:
+                # Finish an accepted startup whose target has not succeeded yet.
+                if self._last_commanded_mode is HVACMode.HEAT:
+                    desired = HVACAction.HEATING
+                elif self._last_commanded_mode is HVACMode.COOL:
+                    desired = HVACAction.COOLING
 
         if desired is HVACAction.IDLE:
             # Nothing established yet and the room is comfortable. Leave the unit
@@ -655,22 +661,23 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
             )
             return True
 
-        # Setpoint first. A unit briefly left in the old mode at the new
-        # setpoint idles; the old setpoint under the new mode would run the
-        # wrong direction until the second call lands.
-        if not await self._async_call(
-            SERVICE_SET_TEMPERATURE, {ATTR_TEMPERATURE: setpoint}, mode, setpoint
-        ):
-            return False
-        self._last_commanded_setpoint = setpoint
-        self._last_command_at = now
-
+        # Some platforms, including custom Gree, ignore setpoints while off.
+        # Establish the mode before sending the target temperature.
         if send_mode:
             if not await self._async_call(
                 SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: mode}, mode, setpoint
             ):
                 return False
             self._last_commanded_mode = mode
+
+        if not await self._async_call(
+            SERVICE_SET_TEMPERATURE, {ATTR_TEMPERATURE: setpoint}, mode, setpoint
+        ):
+            self._last_commanded_setpoint = None
+            return False
+        self._last_commanded_mode = mode
+        self._last_commanded_setpoint = setpoint
+        self._last_command_at = now
 
         _LOGGER.debug(
             "%s: commanded %s to %s @ %s",

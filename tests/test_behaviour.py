@@ -23,7 +23,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.data_entry_flow import FlowResultType
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from custom_components.range_thermostat.const import (
@@ -44,6 +44,7 @@ from .conftest import (
     THERMOSTAT,
     Command,
     ESPHomeStyleMinisplit,
+    GreeStyleMinisplit,
 )
 from .test_acceptance import NO_SENSOR_TIMEOUT, advance, set_band
 
@@ -89,8 +90,8 @@ async def test_resend_reasserts_the_same_command(
     # The resend re-asserts the mode too, so a dropped IR frame that left the
     # unit in the wrong mode gets corrected, not just the setpoint.
     assert minisplit.commands[-2:] == [
-        Command(HVACMode.HEAT, 70.0),
         Command(HVACMode.HEAT, None),
+        Command(HVACMode.HEAT, 70.0),
     ]
     assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
@@ -374,10 +375,211 @@ async def test_repeated_identical_readings_are_not_stale(
 # ----------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("minisplit", [GreeStyleMinisplit], indirect=True)
+@pytest.mark.parametrize(
+    ("room_temperature", "mode", "setpoint"),
+    [(68.5, HVACMode.HEAT, 70.0), (74.0, HVACMode.COOL, 72.0)],
+)
+async def test_gree_applies_the_setpoint_when_starting_from_off(
+    hass,
+    setup_thermostat,
+    minisplit,
+    set_sensor,
+    room_temperature,
+    mode,
+    setpoint,
+):
+    """A unit that drops setpoints while off must start at the requested target."""
+    await setup_thermostat(70.0)
+    await set_band(hass, 70, 72)
+    minisplit._attr_target_temperature = 76
+    minisplit.async_write_ha_state()
+
+    set_sensor(room_temperature)
+    await hass.async_block_till_done()
+
+    assert minisplit.settled == Command(mode, setpoint)
+
+
+@pytest.mark.parametrize(
+    "method", ["async_set_hvac_mode", "async_set_temperature"]
+)
+async def test_failed_command_is_retried_without_starting_the_cooldown(
+    hass, setup_thermostat, minisplit, set_sensor, monkeypatch, method
+):
+    """Neither half of an incomplete command counts as a successful mode change."""
+    await setup_thermostat(70.0)
+    await set_band(hass, 70, 72)
+    original = getattr(minisplit, method)
+
+    async def fail(*args, **kwargs):
+        raise HomeAssistantError("Device rejected command")
+
+    monkeypatch.setattr(minisplit, method, fail)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+
+    state = hass.states.get(THERMOSTAT)
+    assert state.attributes["commanded_setpoint"] is None
+    assert state.attributes["time_until_next_allowed_change"] == 0
+    assert state.attributes[ATTR_HVAC_ACTION] == HVACAction.IDLE
+
+    monkeypatch.setattr(minisplit, method, original)
+    minisplit.commands.clear()
+    set_sensor(68.4)
+    await hass.async_block_till_done()
+
+    expected = [Command(HVACMode.HEAT, 70.0)]
+    if method == "async_set_hvac_mode":
+        expected.insert(0, Command(HVACMode.HEAT, None))
+    assert minisplit.commands == expected
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
+
+
+async def test_off_after_a_partially_failed_start(
+    hass, setup_thermostat, minisplit, set_sensor, monkeypatch
+):
+    """A cached OFF must not suppress shutdown after the device actually starts."""
+    await setup_thermostat(70.0)
+    await set_band(hass, 70, 72)
+    for mode in (HVACMode.OFF, HVACMode.HEAT_COOL):
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_HVAC_MODE,
+            {ATTR_ENTITY_ID: THERMOSTAT, "hvac_mode": mode},
+            blocking=True,
+        )
+    await hass.async_block_till_done()
+
+    async def fail(**kwargs):
+        raise HomeAssistantError("Device rejected setpoint")
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", fail)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+    assert minisplit.hvac_mode == HVACMode.HEAT
+    minisplit.commands.clear()
+
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_HVAC_MODE,
+        {ATTR_ENTITY_ID: THERMOSTAT, "hvac_mode": HVACMode.OFF},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert minisplit.commands == [Command(HVACMode.OFF, None)]
+    assert minisplit.hvac_mode == HVACMode.OFF
+
+
+async def test_return_to_previous_mode_after_a_partially_failed_change(
+    hass, setup_thermostat, minisplit, set_sensor, monkeypatch
+):
+    """Returning demand must restore the device mode, not trust the old cache."""
+    await setup_thermostat(70.0, **{CONF_MIN_CYCLE_DURATION: 0})
+    await set_band(hass, 70, 72)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
+    original = minisplit.async_set_temperature
+
+    async def fail(**kwargs):
+        raise HomeAssistantError("Device rejected setpoint")
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", fail)
+    set_sensor(74.0)
+    await hass.async_block_till_done()
+    assert minisplit.hvac_mode == HVACMode.COOL
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", original)
+    minisplit.commands.clear()
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+
+    assert minisplit.commands == [
+        Command(HVACMode.HEAT, None),
+        Command(HVACMode.HEAT, 70.0),
+    ]
+    assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
+
+
+async def test_failed_same_mode_resend_does_not_block_setpoint_adjustment(
+    hass, setup_thermostat, minisplit, set_sensor, monkeypatch, freezer
+):
+    """A resend failure must not turn a setpoint update into a cooldown gate."""
+    await setup_thermostat(
+        70.0, **{CONF_RESEND_INTERVAL: 5, CONF_MIN_CYCLE_DURATION: 15}
+    )
+    await set_band(hass, 70, 72)
+    set_sensor(68.5)
+    await hass.async_block_till_done()
+    original = minisplit.async_set_temperature
+
+    async def fail(**kwargs):
+        raise HomeAssistantError("Device rejected setpoint")
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", fail)
+    await advance(hass, freezer, 5, set_sensor, 68.5)
+    assert minisplit.hvac_mode == HVACMode.HEAT
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", original)
+    minisplit.commands.clear()
+    set_sensor(68.4)
+    await hass.async_block_till_done()
+    assert minisplit.commands == [Command(HVACMode.HEAT, 70.0)]
+
+    minisplit.commands.clear()
+    await set_band(hass, 69, 72)
+    await hass.async_block_till_done()
+
+    assert minisplit.commands == [Command(HVACMode.HEAT, 69.0)]
+    assert minisplit.settled == Command(HVACMode.HEAT, 69.0)
+
+
+@pytest.mark.parametrize("minisplit", [GreeStyleMinisplit], indirect=True)
+@pytest.mark.parametrize(
+    ("room_temperature", "mode", "setpoint", "old_setpoint"),
+    [(68.5, HVACMode.HEAT, 70.0, 76.0), (74.0, HVACMode.COOL, 72.0, 66.0)],
+)
+async def test_partial_start_recovers_when_reading_enters_band(
+    hass,
+    setup_thermostat,
+    minisplit,
+    set_sensor,
+    monkeypatch,
+    room_temperature,
+    mode,
+    setpoint,
+    old_setpoint,
+):
+    """Entering the band must still finish the target of an accepted startup."""
+    await setup_thermostat(70.0)
+    await set_band(hass, 70, 72)
+    minisplit._attr_target_temperature = old_setpoint
+    minisplit.async_write_ha_state()
+    original = minisplit.async_set_temperature
+
+    async def fail(**kwargs):
+        raise HomeAssistantError("Device rejected setpoint")
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", fail)
+    set_sensor(room_temperature)
+    await hass.async_block_till_done()
+    assert minisplit.hvac_mode == mode
+
+    monkeypatch.setattr(minisplit, "async_set_temperature", original)
+    minisplit.commands.clear()
+    set_sensor(70.5)
+    await hass.async_block_till_done()
+
+    assert minisplit.target_temperature == setpoint
+    assert minisplit.commands == [Command(mode, setpoint)]
+
+
 async def test_mode_change_is_two_calls_by_default(
     hass, setup_thermostat, minisplit, set_sensor
 ):
-    """Setpoint then mode, so it works on platforms that ignore hvac_mode.
+    """Mode then setpoint, so it also works on units that ignore targets while off.
 
     Home Assistant forwards ``hvac_mode`` into ``async_set_temperature``
     without dispatching ``async_set_hvac_mode``, and most climate platforms
@@ -389,10 +591,9 @@ async def test_mode_change_is_two_calls_by_default(
     set_sensor(68.5)
     await hass.async_block_till_done()
 
-    # Setpoint lands first, while the unit is still off; then the mode.
     assert minisplit.commands == [
-        Command(HVACMode.OFF, 70.0),
         Command(HVACMode.HEAT, None),
+        Command(HVACMode.HEAT, 70.0),
     ]
     assert minisplit.settled == Command(HVACMode.HEAT, 70.0)
 
