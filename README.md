@@ -92,8 +92,8 @@ modes continuously. A warning is logged when that happens.
 The thermostat tracks what it last sent and only calls a service when the mode or the setpoint
 actually changes.
 
-A mode change goes out as two service calls: `climate.set_temperature` for the setpoint, then
-`climate.set_hvac_mode`. Setpoint-only changes are a single call.
+A mode change goes out as two service calls: `climate.set_hvac_mode`, then
+`climate.set_temperature` for the setpoint. Setpoint-only changes are a single call.
 
 Two calls rather than one is deliberate. Home Assistant lets you pass `hvac_mode` to
 `climate.set_temperature`, but core does **not** dispatch `async_set_hvac_mode` for you - it
@@ -101,9 +101,10 @@ forwards the kwarg and leaves each platform to handle it, and most don't. Only 2
 climate platforms in core even reference it. On the other 79 a combined call would set the
 temperature and silently ignore the mode, so the unit would never start heating or cooling.
 
-The setpoint is sent first on purpose. A unit briefly left in the old mode at the new setpoint
-just idles, whereas the old setpoint under the new mode would run the wrong direction until
-the second call lands.
+The mode is sent first because some integrations, including the custom Gree integration,
+ignore temperature changes while the unit is off. The unit can briefly run at its previous
+setpoint between the two calls. If either call fails, the next evaluation retries the command
+without starting the mode-change cooldown.
 
 Set `single_command` to fold a mode change back into one call. ESPHome does honour `hvac_mode`
 inside `set_temperature` and turns it into a single IR frame, so if that's your setup this
@@ -161,5 +162,5 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 The test suite covers each of the design's acceptance criteria against a mock minisplit that
-ignores `hvac_mode` inside `set_temperature`, like most real integrations. A second mock
-models the ESPHome behaviour and covers the `single_command` path.
+ignores `hvac_mode` inside `set_temperature`, like most real integrations. Additional mocks
+cover custom Gree units that ignore setpoints while off and the ESPHome `single_command` path.

@@ -70,6 +70,7 @@ class MockMinisplit(ClimateEntity):
 
     #: Whether ``async_set_temperature`` acts on a ``hvac_mode`` kwarg.
     honours_hvac_mode = False
+    accepts_temperature_while_off = True
 
     def __init__(self) -> None:
         """Start powered off."""
@@ -105,7 +106,10 @@ class MockMinisplit(ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if hvac_mode is not None and self.honours_hvac_mode:
             self._attr_hvac_mode = HVACMode(hvac_mode)
-        if temperature is not None:
+        if temperature is not None and (
+            self.accepts_temperature_while_off
+            or self._attr_hvac_mode != HVACMode.OFF
+        ):
             self._attr_target_temperature = temperature
         self.commands.append(Command(self._attr_hvac_mode, temperature))
         self.async_write_ha_state()
@@ -121,6 +125,13 @@ class ESPHomeStyleMinisplit(MockMinisplit):
     """An IR bridge that folds ``hvac_mode`` into one command, as ESPHome does."""
 
     honours_hvac_mode = True
+
+
+class GreeStyleMinisplit(MockMinisplit):
+    """The custom Gree integration ignores setpoints while powered off."""
+
+    _attr_min_temp = 61
+    accepts_temperature_while_off = False
 
 
 @pytest.fixture(autouse=True)

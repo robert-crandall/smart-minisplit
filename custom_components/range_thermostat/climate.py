@@ -655,22 +655,21 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
             )
             return True
 
-        # Setpoint first. A unit briefly left in the old mode at the new
-        # setpoint idles; the old setpoint under the new mode would run the
-        # wrong direction until the second call lands.
-        if not await self._async_call(
-            SERVICE_SET_TEMPERATURE, {ATTR_TEMPERATURE: setpoint}, mode, setpoint
-        ):
-            return False
-        self._last_commanded_setpoint = setpoint
-        self._last_command_at = now
-
+        # Some platforms, including custom Gree, ignore setpoints while off.
+        # Establish the mode before sending the target temperature.
         if send_mode:
             if not await self._async_call(
                 SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: mode}, mode, setpoint
             ):
                 return False
-            self._last_commanded_mode = mode
+
+        if not await self._async_call(
+            SERVICE_SET_TEMPERATURE, {ATTR_TEMPERATURE: setpoint}, mode, setpoint
+        ):
+            return False
+        self._last_commanded_mode = mode
+        self._last_commanded_setpoint = setpoint
+        self._last_command_at = now
 
         _LOGGER.debug(
             "%s: commanded %s to %s @ %s",
