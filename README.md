@@ -105,6 +105,8 @@ The mode is sent first because some integrations, including the custom Gree inte
 ignore temperature changes while the unit is off. The unit can briefly run at its previous
 setpoint between the two calls. If either call fails, the next evaluation retries the command
 without starting the mode-change cooldown.
+If the mode succeeds but the setpoint fails, the previous cached mode is invalidated
+so an OFF request or a return to the previous mode still reaches the unit.
 
 Set `single_command` to fold a mode change back into one call. ESPHome does honour `hvac_mode`
 inside `set_temperature` and turns it into a single IR frame, so if that's your setup this

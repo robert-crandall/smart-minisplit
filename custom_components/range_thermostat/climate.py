@@ -666,6 +666,9 @@ class RangeThermostat(ClimateEntity, RestoreEntity):
         if not await self._async_call(
             SERVICE_SET_TEMPERATURE, {ATTR_TEMPERATURE: setpoint}, mode, setpoint
         ):
+            if send_mode:
+                # The mode changed, so the previous cached mode is no longer valid.
+                self._last_commanded_mode = None
             return False
         self._last_commanded_mode = mode
         self._last_commanded_setpoint = setpoint
